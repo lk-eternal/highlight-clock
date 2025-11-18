@@ -1,0 +1,30 @@
+{
+  "scale" : 0.5,
+  "windowX" : 1247,
+  "windowY" : 258,
+  "clockColor" : "#323232",
+  "defaultHighlightColor" : "#DD7700",
+  "numberColor" : "#FFFFFF",
+  "hourHandColor" : "#FFFFFF",
+  "minuteHandColor" : "#C0C0C0",
+  "secondHandColor" : "#FF0000",
+  "highlightAreas" : [ {
+    "startHour" : 9,
+    "startMinute" : 0,
+    "endHour" : 12,
+    "endMinute" : 0,
+    "highlightColor" : "#DD7700"
+  }, {
+    "startHour" : 12,
+    "startMinute" : 0,
+    "endHour" : 13,
+    "endMinute" : 0,
+    "highlightColor" : "#33AA00"
+  }, {
+    "startHour" : 13,
+    "startMinute" : 0,
+    "endHour" : 18,
+    "endMinute" : 0,
+    "highlightColor" : "#DD7700"
+  } ]
+}
