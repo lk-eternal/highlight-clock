@@ -550,6 +550,7 @@ public class AnalogClock extends JFrame {
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             int currentSize = (int) (BASE_CLOCK_SIZE * scale);
+            currentSize = currentSize - currentSize%2;
             int centerX = currentSize / 2;
             int centerY = currentSize / 2;
 
@@ -580,8 +581,9 @@ public class AnalogClock extends JFrame {
             drawHand(g2d, hourAngle, (int)(50*scale), (int)(6*scale), hourHandColor, centerX, centerY);
 
             // 5. 绘制中心点
-            g2d.setColor(Color.DARK_GRAY);
+            g2d.setColor(Color.WHITE);
             int centerDotSize = (int)(10*scale);
+            centerDotSize = centerDotSize - centerDotSize%2;
             g2d.fillOval(centerX - centerDotSize / 2, centerY - centerDotSize / 2, centerDotSize, centerDotSize);
         }
 
@@ -628,7 +630,8 @@ public class AnalogClock extends JFrame {
                 }
 
                 // fillArc 扫描角度为负值表示顺时针
-                int margin = (int) (BASE_CLOCK_SIZE * scale * 0.05);
+                int margin = (int) (BASE_CLOCK_SIZE * scale * 0.06);
+                margin = margin - margin%2;
                 g2d.fillArc(margin / 2, margin / 2,
                         currentSize - margin, currentSize - margin,
                         (int) sweepStartAngle, (int) -sweepAngle);
@@ -646,19 +649,21 @@ public class AnalogClock extends JFrame {
         }
 
         private void drawMarksAndNumbers(Graphics2D g2d, int currentSize, int centerX, int centerY) {
-            Font font = new Font("Arial", Font.BOLD, (int)(14 * scale));
+            Font font = new Font("Microsoft YaHei", Font.BOLD, (int)(14 * scale));
             g2d.setFont(font);
             FontMetrics fm = g2d.getFontMetrics(font);
             int radius = currentSize / 2;
 
             for (int i = 1; i <= 12; i++) {
                 double angle = Math.toRadians(i * 30 - 90);
-                int x = (int) (centerX + radius * 0.9 * Math.cos(angle));
-                int y = (int) (centerY + radius * 0.9 * Math.sin(angle));
+                int x = Math.toIntExact(Math.round(centerX + radius * 0.86 * Math.cos(angle)));
+                int y = Math.toIntExact(Math.round(centerY + radius * 0.86 * Math.sin(angle)));
 
                 String num = String.valueOf(i);
                 int strWidth = fm.stringWidth(num);
+                strWidth = strWidth - strWidth%2;
                 int strHeight = fm.getHeight();
+                strHeight = strHeight - strHeight%4;
                 g2d.drawString(num, x - strWidth / 2, y + strHeight / 4);
             }
         }
