@@ -1,3 +1,4 @@
+# 介绍
 退出自动保存记录,打开自动加载记录
 <br>
 中键滚轮缩放,鼠标随意拖动位置
@@ -15,3 +16,19 @@
 <br>
 <img width="358" height="363" alt="image" src="https://github.com/user-attachments/assets/a875bedf-c42d-4e42-97d0-64e68c0fa9ba" />
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/83edd740-4b62-49ec-9acf-16272061ef0e" />
+
+# 启动
+编辑`run.bat`
+设置JAVA_HOME,请使用java 21及以上环境
+```bat
+@echo off
+set "JAVA_HOME=D:\Apps\Java\jdk-21.0.2"
+"%JAVA_HOME%\bin\java" -jar "clock.jar"
+EXIT
+```
+双击`lk-clock.vbs`启动
+
+# 开机自动启动
+创建`lk-clock.vbs`的快捷方式
+按下`Win+R`,输入`shell:startup`
+复制快捷方式到启动目录
