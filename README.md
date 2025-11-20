@@ -2,7 +2,8 @@
 <br>
 中键滚轮缩放,鼠标随意拖动位置
 <br>
-<img width="326" height="321" alt="image" src="https://github.com/user-attachments/assets/6a669f9c-02c4-49b0-8230-3eb38fa8e9fe" />
+<img width="199" height="199" alt="image" src="https://github.com/user-attachments/assets/40062b5b-f726-4ea3-8b3c-3bcf0e4cd937" />
+
 <br>
 双击指定区域快速添加/编辑高亮区域或右键唤起菜单
 <br>
@@ -11,3 +12,6 @@
 <br>
 <img width="386" height="493" alt="image" src="https://github.com/user-attachments/assets/118e8489-6653-47bf-ab05-61ebe3b313b5" />
 <img width="386" height="493" alt="image" src="https://github.com/user-attachments/assets/28677be7-9950-4f9a-bb19-3d97081cc9ea" />
+<br>
+<img width="358" height="363" alt="image" src="https://github.com/user-attachments/assets/a875bedf-c42d-4e42-97d0-64e68c0fa9ba" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/83edd740-4b62-49ec-9acf-16272061ef0e" />
