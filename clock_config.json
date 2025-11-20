@@ -1,30 +1,43 @@
 {
-  "scale" : 0.70000005,
-  "windowX" : 1729,
-  "windowY" : 356,
-  "clockColor" : "#323232",
+  "scale" : 0.99999976,
+  "windowX" : 1650,
+  "windowY" : 92,
+  "showLabels" : true,
+  "clockColor" : "#333333",
   "defaultHighlightColor" : "#DD7700",
   "numberColor" : "#FFFFFF",
   "hourHandColor" : "#FFFFFF",
-  "minuteHandColor" : "#C0C0C0",
+  "minuteHandColor" : "#E2E2E2",
   "secondHandColor" : "#FF0000",
   "highlightAreas" : [ {
     "startHour" : 9,
     "startMinute" : 0,
-    "endHour" : 12,
-    "endMinute" : 0,
-    "highlightColor" : "#DD7700"
+    "endHour" : 11,
+    "endMinute" : 38,
+    "label" : "上班",
+    "labelColor" : "#FFFFFF",
+    "highlightColor" : "#DD7500",
+    "enterAction" : "fullscreen",
+    "exitAction" : "none"
   }, {
-    "startHour" : 12,
-    "startMinute" : 0,
+    "startHour" : 11,
+    "startMinute" : 38,
     "endHour" : 13,
     "endMinute" : 0,
-    "highlightColor" : "#33AA00"
+    "label" : "午休",
+    "labelColor" : "#FFFFFF",
+    "highlightColor" : "#33AA00",
+    "enterAction" : "fullscreen",
+    "exitAction" : "none"
   }, {
     "startHour" : 13,
     "startMinute" : 0,
     "endHour" : 18,
     "endMinute" : 0,
-    "highlightColor" : "#DD7700"
+    "label" : "上班",
+    "labelColor" : "#FFFFFF",
+    "highlightColor" : "#DD7700",
+    "enterAction" : "fullscreen",
+    "exitAction" : "lock"
   } ]
 }

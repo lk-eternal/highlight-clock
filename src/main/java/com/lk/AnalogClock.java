@@ -2,9 +2,6 @@ package com.lk;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.colorchooser.AbstractColorChooserPanel;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.time.LocalTime;
@@ -17,8 +14,8 @@ import java.util.function.Consumer;
 public class AnalogClock extends JFrame {
 
     private ClockPanel clockPanel;
-    private JPopupMenu settingsMenu;
     private int xOffset, yOffset;
+    private TimeRangeMonitor timeRangeMonitor;
 
     public AnalogClock() {
         ClockConfig config = ConfigManager.loadConfig();
@@ -47,12 +44,17 @@ public class AnalogClock extends JFrame {
             setLocationRelativeTo(null);
         }
 
+        // 初始化时间范围监控器
+        timeRangeMonitor = new TimeRangeMonitor(clockPanel.getHighlightAreas());
+
         // 动态更新时钟
         Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
                 clockPanel.repaint();
+                // 每秒检查是否需要触发进入/退出动作
+                timeRangeMonitor.checkAndTrigger();
             }
         }, 0, 1000);
 
@@ -206,7 +208,10 @@ public class AnalogClock extends JFrame {
         config.minuteHandColor = clockPanel.getMinuteHandColor();
         config.secondHandColor = clockPanel.getSecondHandColor();
 
-        // 3. 高亮区域 (直接使用 Color 对象创建 SerializableHighlightSetting)
+        // 3. 全局标签显示设置
+        config.showLabels = clockPanel.isShowLabels();
+
+        // 4. 高亮区域 (直接使用 Color 对象创建 SerializableHighlightSetting)
         List<ClockConfig.SerializableHighlightSetting> serializableList = new ArrayList<>();
         for (HighlightSetting setting : clockPanel.getHighlightAreas()) {
             serializableList.add(new ClockConfig.SerializableHighlightSetting(
@@ -214,7 +219,11 @@ public class AnalogClock extends JFrame {
                     setting.getStartMinute(),
                     setting.getEndHour(),
                     setting.getEndMinute(),
-                    setting.getHighlightColor() // <--- 直接传递 Color 对象
+                    setting.getHighlightColor(),
+                    setting.getLabel(),
+                    setting.getLabelColor(),
+                    setting.getEnterAction(),
+                    setting.getExitAction()
             ));
         }
         config.highlightAreas = serializableList;
@@ -246,6 +255,12 @@ public class AnalogClock extends JFrame {
         private Color minuteHandColor;
         private Color secondHandColor;
 
+        // 全局设置：是否显示标签
+        private boolean showLabels = true;
+
+        // 鼠标悬停的高亮区域
+        private HighlightSetting hoveredSetting = null;
+
         public ClockPanel(ClockConfig config) {
             // 1. 应用颜色和缩放 (直接使用配置中的 Color 对象)
             this.scale = config.scale;
@@ -255,6 +270,7 @@ public class AnalogClock extends JFrame {
             this.hourHandColor = config.hourHandColor;
             this.minuteHandColor = config.minuteHandColor;
             this.secondHandColor = config.secondHandColor;
+            this.showLabels = config.showLabels;
 
             // 2. 应用高亮区域
             this.highlightAreas = new ArrayList<>();
@@ -265,13 +281,17 @@ public class AnalogClock extends JFrame {
                             shs.startMinute,
                             shs.endHour,
                             shs.endMinute,
-                            shs.highlightColor // <--- 直接使用 Color 对象
+                            shs.highlightColor,
+                            shs.label != null ? shs.label : "",
+                            shs.labelColor != null ? shs.labelColor : Color.WHITE,
+                            shs.enterAction != null ? shs.enterAction : "none",
+                            shs.exitAction != null ? shs.exitAction : "none"
                     ));
                 }
             } else {
                 // 如果配置中没有高亮区域，使用初始默认值
-                this.highlightAreas.add(new HighlightSetting(9, 0, 12, 0, defaultHighlightColor));
-                this.highlightAreas.add(new HighlightSetting(13, 18, 18, 0, defaultHighlightColor));
+                this.highlightAreas.add(new HighlightSetting(9, 0, 12, 0, defaultHighlightColor, "", Color.WHITE));
+                this.highlightAreas.add(new HighlightSetting(13, 18, 18, 0, defaultHighlightColor, "", Color.WHITE));
             }
 
             setOpaque(false);
@@ -382,6 +402,22 @@ public class AnalogClock extends JFrame {
                         parent.setLocation(newLocation);
                     }
                 }
+
+                @Override
+                public void mouseMoved(MouseEvent e) {
+                    // 检查鼠标是否悬停在某个高亮区域上
+                    HighlightSetting newHovered = getHighlightSettingAt(e.getX(), e.getY());
+                    
+                    // 只有真正的高亮区域才算悬停（排除临时创建的新建对象）
+                    if (newHovered != null && !highlightAreas.contains(newHovered)) {
+                        newHovered = null;
+                    }
+                    
+                    if (newHovered != hoveredSetting) {
+                        hoveredSetting = newHovered;
+                        repaint(); // 触发重绘以显示悬停效果
+                    }
+                }
             });
         }
 
@@ -419,6 +455,9 @@ public class AnalogClock extends JFrame {
         public void setMinuteHandColor(Color minuteHandColor) { this.minuteHandColor = minuteHandColor; repaint(); }
         public Color getSecondHandColor() { return secondHandColor; }
         public void setSecondHandColor(Color secondHandColor) { this.secondHandColor = secondHandColor; repaint(); }
+
+        public boolean isShowLabels() { return showLabels; }
+        public void setShowLabels(boolean showLabels) { this.showLabels = showLabels; repaint(); }
 
         // ClockPanel.java 内部类 ClockPanel 的部分
 
@@ -482,67 +521,49 @@ public class AnalogClock extends JFrame {
                 return null; // 点击不在表盘范围内
             }
 
-            int clickHour = time[0];
+            int clickHour = time[0]; // 0-11 (12小时制)
             int clickMinute = time[1];
-            int clickTotalMinutes = clickHour * 60 + clickMinute;
 
+            // 检查所有高亮区域
             for (HighlightSetting setting : highlightAreas) {
-                int startTotalMinutes = setting.getStartHour() * 60 + setting.getStartMinute();
-                int endTotalMinutes = setting.getEndHour() * 60 + setting.getEndMinute();
+                // 将24小时制的设置转换为12小时制进行匹配
+                int startHour24 = setting.getStartHour();
+                int startMinute24 = setting.getStartMinute();
+                int endHour24 = setting.getEndHour();
+                int endMinute24 = setting.getEndMinute();
 
-                // 尝试匹配原始时间段
-                if (isTimeInRange(clickTotalMinutes, startTotalMinutes, endTotalMinutes)) {
+                // 转换为12小时制
+                int startHour12 = startHour24 % 12;
+                int endHour12 = endHour24 % 12;
+
+                // 计算12小时制的总分钟数
+                int startMin12 = startHour12 * 60 + startMinute24;
+                int endMin12 = endHour12 * 60 + endMinute24;
+                int clickMin12 = clickHour * 60 + clickMinute;
+
+                // 检查点击是否在这个12小时制区域内
+                boolean inRange = false;
+                if (startMin12 <= endMin12) {
+                    // 不跨越12点的情况
+                    inRange = (clickMin12 >= startMin12 && clickMin12 < endMin12);
+                } else {
+                    // 跨越12点的情况
+                    inRange = (clickMin12 >= startMin12 || clickMin12 < endMin12);
+                }
+
+                if (inRange) {
                     return setting;
                 }
-
-                // 同时尝试匹配对应的12小时后的时间段（如果原始时间段在0-12小时）
-                if (startTotalMinutes < 720) { // 如果开始时间在0-12小时内
-                    int startPlus12 = startTotalMinutes + 720;
-                    int endPlus12 = endTotalMinutes + 720;
-
-                    // 确保不超过24小时
-                    if (endPlus12 >= 1440) {
-                        endPlus12 = 1439; // 最大到23:59
-                    }
-
-                    if (isTimeInRange(clickTotalMinutes, startPlus12, endPlus12)) {
-                        return setting;
-                    }
-                }
-
-                // 同时尝试匹配对应的12小时前的时间段（如果原始时间段在12-24小时）
-                if (startTotalMinutes >= 720) { // 如果开始时间在12-24小时内
-                    int startMinus12 = startTotalMinutes - 720;
-                    int endMinus12 = endTotalMinutes - 720;
-
-                    if (isTimeInRange(clickTotalMinutes, startMinus12, endMinus12)) {
-                        return setting;
-                    }
-                }
             }
-            int endH = (clickHour + 1) % 24; // 下一个小时，处理 23 -> 0 的情况
 
-            // 创建临时对象，用于填充新建对话框
+            // 没有匹配到任何高亮区域，创建临时对象用于新建
+            int endH = (clickHour + 1) % 12;
             return new HighlightSetting(
                     clickHour, 0,
                     endH, 0,
-                    defaultHighlightColor);
+                    defaultHighlightColor, "", Color.WHITE);
         }
 
-        /**
-         * 检查给定的时间是否在指定范围内（处理跨越午夜的情况）
-         */
-        private boolean isTimeInRange(int checkTime, int startTime, int endTime) {
-            // 场景 1: 区域不跨越午夜 (Start <= End)
-            if (startTime <= endTime) {
-                return checkTime >= startTime && checkTime < endTime;
-            }
-            // 场景 2: 区域跨越午夜 (Start > End)
-            else {
-                return (checkTime >= startTime && checkTime < 1440) ||
-                        (checkTime >= 0 && checkTime < endTime);
-            }
-        }
 
         @Override
         protected void paintComponent(Graphics g) {
@@ -558,13 +579,17 @@ public class AnalogClock extends JFrame {
             int hour = now.getHour() % 12;
             int minute = now.getMinute();
             int second = now.getSecond();
+            
+            // 计算当前时间（24小时制，用于判断是否在高亮区域内）
+            int currentHour24 = now.getHour();
+            int currentMinute = now.getMinute();
 
             // 1. 绘制表盘背景
             g2d.setColor(clockColor);
             g2d.fillOval(0, 0, currentSize, currentSize);
 
-            // 2. 绘制时间区域高亮 (使用单独的颜色)
-            drawHighlightSections(g2d, currentSize);
+            // 2. 绘制时间区域高亮和标签
+            drawHighlightSections(g2d, currentSize, centerX, centerY, currentHour24, currentMinute);
 
             // 3. 绘制刻度和数字
             g2d.setColor(numberColor);
@@ -588,57 +613,172 @@ public class AnalogClock extends JFrame {
         }
 
         /**
-         * 绘制高亮区域 (现在从 HighlightSetting 中获取颜色)
+         * 绘制高亮区域和标签（带径向渐变和内发光效果）
          */
-        private void drawHighlightSections(Graphics2D g2d, int currentSize) {
+        private void drawHighlightSections(Graphics2D g2d, int currentSize, int centerX, int centerY, int currentHour24, int currentMinute) {
             for (HighlightSetting setting : highlightAreas) {
-                g2d.setColor(setting.getHighlightColor());
-
                 // 1. 将 24 小时制的 HH:MM 转换为总分钟数（0 到 1440）
                 int startTotalMinutes = setting.getStartHour() * 60 + setting.getStartMinute();
                 int endTotalMinutes = setting.getEndHour() * 60 + setting.getEndMinute();
 
-                // 2. 将总分钟数转换为 12 小时时钟上的角度
-                // 12小时制总分钟数: 12 * 60 = 720
-                // 角度/分钟: 360 / 720 = 0.5 度/分钟
-
-                // 我们从 12 点钟位置 (0 度) 顺时针计算。
-                // 时钟上的 12 点是 90 度 (在 fillArc 坐标系中)。
-
-                // 转换为 12 小时制下的总分钟数 (0 到 720)
+                // 2. 转换为 12 小时制下的总分钟数 (0 到 720)
                 int startMin12 = startTotalMinutes % 720;
-                int endMin12 = endTotalMinutes % 720;
 
-                // 计算起始角度 (AWT fillArc 角度从 3点钟位置开始，逆时针增加)
-                // 我们的时钟是顺时针的，所以角度取负值。
-                // 12点钟对应 90度 (3点钟在0度，逆时针到12点是90度)
-
-                // 距离 12 点钟位置的分钟数
-                // 距离 12 点钟的度数 (顺时针) = (startMin12 / 2)
-                // AWT 的起始角 (逆时针) = 90 - (距离12点的度数)
+                // 3. 计算起始角度和扫描角度
                 float sweepStartAngle = 90f - (startMin12 * 0.5f);
-
-                // 计算扫描角度 (始终顺时针扫描)
                 float sweepAngle;
                 if (endTotalMinutes > startTotalMinutes) {
-                    // 简单情况：未跨越午夜/中午12点线
                     sweepAngle = (endTotalMinutes - startTotalMinutes) * 0.5f;
                 } else {
-                    // 跨越午夜/中午12点线 (例如 23:30 到 01:30)
-                    // 假设 span = 26:00 - 23:30 = 2.5 hours = 150 minutes
                     sweepAngle = (1440 - startTotalMinutes + endTotalMinutes) * 0.5f;
                 }
 
-                // fillArc 扫描角度为负值表示顺时针
                 int margin = (int) (BASE_CLOCK_SIZE * scale * 0.06);
                 margin = margin - margin%2;
-                g2d.fillArc(margin / 2, margin / 2,
-                        currentSize - margin, currentSize - margin,
+                int arcX = margin / 2;
+                int arcY = margin / 2;
+                int arcSize = currentSize - margin;
+
+                // 4. 判断当前时间是否在此高亮区域内
+                int currentTotalMinutes = currentHour24 * 60 + currentMinute;
+                boolean isCurrentTimeInRange = isTimeInHighlightRange(currentTotalMinutes, startTotalMinutes, endTotalMinutes);
+
+                Color baseColor = setting.getHighlightColor();
+                boolean isHovered = (setting == hoveredSetting);
+
+                // 5. 只在当前时间落在高亮区域时应用渐变效果
+                if (isCurrentTimeInRange) {
+                    // 创建径向渐变：从中心到边缘，增强对比
+                    float gradientRadius = currentSize / 2.0f;
+                    Color centerColor = brightenColor(baseColor, 1.8f);  // 中心更亮
+                    Color edgeColor = darkenColor(baseColor, 0.7f);      // 边缘变暗
+                    
+                    RadialGradientPaint gradient = new RadialGradientPaint(
+                        centerX, centerY, gradientRadius,
+                        new float[]{0.0f, 0.5f, 1.0f},
+                        new Color[]{centerColor, baseColor, edgeColor}
+                    );
+                    
+                    g2d.setPaint(gradient);
+                } else {
+                    // 不在当前时间范围内，使用纯色
+                    g2d.setColor(baseColor);
+                }
+                
+                // 6. 绘制高亮区域本体
+                g2d.fillArc(arcX, arcY, arcSize, arcSize,
                         (int) sweepStartAngle, (int) -sweepAngle);
+
+                // 7. 鼠标悬停效果：绘制多层内发光边框（向内绘制，不会被截断）
+                if (isHovered) {
+                    // 绘制多层向内的发光边框
+                    for (int i = 1; i <= 5; i++) {
+                        int glowAlpha = 60 - i * 10; // 从内到外逐渐变淡
+                        Color glowColor = new Color(255, 255, 255, glowAlpha);
+                        g2d.setColor(glowColor);
+                        
+                        float strokeWidth = (5 - i + 1) * 2 * scale;
+                        g2d.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+                        g2d.drawArc(arcX, arcY, arcSize, arcSize,
+                                (int) sweepStartAngle, (int) -sweepAngle);
+                    }
+                    
+                    // 最外层绘制明亮的主边框
+                    Color borderColor = brightenColor(baseColor, 2.2f);
+                    g2d.setColor(borderColor);
+                    g2d.setStroke(new BasicStroke((int)(3 * scale), BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+                    g2d.drawArc(arcX, arcY, arcSize, arcSize,
+                            (int) sweepStartAngle, (int) -sweepAngle);
+                    
+                    // 恢复默认画笔
+                    g2d.setStroke(new BasicStroke(1));
+                }
+
+                if (showLabels && setting.getLabel() != null && !setting.getLabel().trim().isEmpty()) {
+                    // 简化角度计算
+                    float startAngle = startTotalMinutes * 0.5f; // 直接转换为角度
+                    float endAngle = endTotalMinutes * 0.5f;
+
+                    float midAngleDeg;
+                    if (endAngle > startAngle) {
+                        midAngleDeg = (startAngle + endAngle) / 2.0f;
+                    } else {
+                        midAngleDeg = (startAngle + endAngle + 360) / 2.0f;
+                        if (midAngleDeg >= 360) midAngleDeg -= 360;
+                    }
+
+                    // 转换为弧度（从12点开始顺时针）
+                    double awtAngleRad = Math.toRadians(90 - midAngleDeg);
+
+                    // 计算标签位置
+                    int radius = currentSize / 2;
+                    int labelRadius = (int) (radius * 0.55);
+                    int labelX = (int) (centerX + labelRadius * Math.cos(awtAngleRad));
+                    int labelY = (int) (centerY - labelRadius * Math.sin(awtAngleRad));
+
+                    // 设置字体和颜色
+                    g2d.setColor(setting.getLabelColor());
+                    Font labelFont = new Font("Microsoft YaHei", Font.BOLD, (int)(12 * scale));
+                    g2d.setFont(labelFont);
+
+                    // 居中绘制文本
+                    FontMetrics fm = g2d.getFontMetrics();
+                    String label = setting.getLabel().trim();
+                    int labelWidth = fm.stringWidth(label);
+                    int labelHeight = fm.getAscent(); // 使用ascent而不是height来更好居中
+
+                    g2d.drawString(label, labelX - labelWidth / 2, labelY + labelHeight / 2);
+                }
             }
         }
 
-        // ... (drawHand, drawMarksAndNumbers 保持不变) ...
+        /**
+         * 判断当前时间是否在高亮区域范围内
+         */
+        private boolean isTimeInHighlightRange(int currentMinutes, int startMinutes, int endMinutes) {
+            if (startMinutes <= endMinutes) {
+                // 不跨越午夜的情况
+                return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+            } else {
+                // 跨越午夜的情况
+                return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+            }
+        }
+
+        /**
+         * 增亮颜色（用于渐变和发光效果）
+         */
+        private Color brightenColor(Color color, float factor) {
+            int r = color.getRed();
+            int g = color.getGreen();
+            int b = color.getBlue();
+            int alpha = color.getAlpha();
+            
+            // 增亮RGB值，但不超过255
+            r = Math.min(255, (int)(r * factor));
+            g = Math.min(255, (int)(g * factor));
+            b = Math.min(255, (int)(b * factor));
+            
+            return new Color(r, g, b, alpha);
+        }
+
+        /**
+         * 变暗颜色（用于渐变边缘）
+         */
+        private Color darkenColor(Color color, float factor) {
+            int r = color.getRed();
+            int g = color.getGreen();
+            int b = color.getBlue();
+            int alpha = color.getAlpha();
+            
+            // 降低RGB值
+            r = (int)(r * factor);
+            g = (int)(g * factor);
+            b = (int)(b * factor);
+            
+            return new Color(r, g, b, alpha);
+        }
+
         private void drawHand(Graphics2D g2d, double angle, int length, int thickness, Color color, int centerX, int centerY) {
             int x = (int) (centerX + length * Math.cos(angle));
             int y = (int) (centerY + length * Math.sin(angle));
@@ -675,36 +815,67 @@ public class AnalogClock extends JFrame {
 
     class HighlightSetting {
         private int startHour;
-        private int startMinute; // 【新增】起始分钟
+        private int startMinute;
         private int endHour;
-        private int endMinute;   // 【新增】结束分钟
+        private int endMinute;
         private Color highlightColor;
+        private String label;
+        private Color labelColor;
+        private String enterAction;
+        private String exitAction;
 
-        // 【修改】构造函数以支持分钟
-        public HighlightSetting(int startHour, int startMinute, int endHour, int endMinute, Color highlightColor) {
+        public HighlightSetting(int startHour, int startMinute, int endHour, int endMinute, Color highlightColor, String label, Color labelColor) {
+            this(startHour, startMinute, endHour, endMinute, highlightColor, label, labelColor, "none", "none");
+        }
+
+        public HighlightSetting(int startHour, int startMinute, int endHour, int endMinute, Color highlightColor, String label, Color labelColor, String enterAction, String exitAction) {
             this.startHour = startHour;
             this.startMinute = startMinute;
             this.endHour = endHour;
             this.endMinute = endMinute;
             this.highlightColor = highlightColor;
+            this.label = label;
+            this.labelColor = labelColor;
+            this.enterAction = enterAction != null ? enterAction : "none";
+            this.exitAction = exitAction != null ? exitAction : "none";
         }
 
         public int getStartHour() { return startHour; }
-        public int getStartMinute() { return startMinute; } // 【新增】
+        public int getStartMinute() { return startMinute; }
         public int getEndHour() { return endHour; }
-        public int getEndMinute() { return endMinute; }     // 【新增】
+        public int getEndMinute() { return endMinute; }
         public Color getHighlightColor() { return highlightColor; }
+        public String getLabel() { return label; }
+        public Color getLabelColor() { return labelColor; }
+        public String getEnterAction() { return enterAction; }
+        public String getExitAction() { return exitAction; }
 
         public void setHighlightColor(Color highlightColor) {
             this.highlightColor = highlightColor;
         }
 
+        public void setLabel(String label) {
+            this.label = label;
+        }
+
+        public void setLabelColor(Color labelColor) {
+            this.labelColor = labelColor;
+        }
+
+        public void setEnterAction(String enterAction) {
+            this.enterAction = enterAction;
+        }
+
+        public void setExitAction(String exitAction) {
+            this.exitAction = exitAction;
+        }
+
         @Override
         public String toString() {
-            // 【修改】在列表中显示分钟数
             String hexColor = String.format("#%06X", (0xFFFFFF & highlightColor.getRGB()));
-            return String.format("<html><span style='background-color:%s;'>&nbsp;&nbsp;&nbsp;</span> %02d:%02d - %02d:%02d</html>",
-                    hexColor, startHour, startMinute, endHour, endMinute);
+            String labelPart = (label != null && !label.trim().isEmpty()) ? " [" + label + "]" : "";
+            return String.format("<html><span style='background-color:%s;'>&nbsp;&nbsp;&nbsp;</span> %02d:%02d - %02d:%02d%s</html>",
+                    hexColor, startHour, startMinute, endHour, endMinute, labelPart);
         }
 
         public String format(){
@@ -794,8 +965,19 @@ public class AnalogClock extends JFrame {
          * 创建样式和颜色设置面板 (更新默认高亮颜色设置)
          */
         private JPanel createStylePanel() {
-            JPanel panel = new JPanel(new GridLayout(7, 1, 10, 10)); // 7行
+            JPanel panel = new JPanel(new GridLayout(8, 1, 10, 10)); // 8行
             panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            // 添加全局标签显示设置
+            JPanel labelSettingPanel = new JPanel(new BorderLayout(10, 5));
+            labelSettingPanel.add(new JLabel("在表盘显示标签:"), BorderLayout.WEST);
+            JCheckBox showLabelsCheckBox = new JCheckBox();
+            showLabelsCheckBox.setSelected(clockPanel.isShowLabels());
+            showLabelsCheckBox.addActionListener(e -> {
+                clockPanel.setShowLabels(showLabelsCheckBox.isSelected());
+            });
+            labelSettingPanel.add(showLabelsCheckBox, BorderLayout.EAST);
+            panel.add(labelSettingPanel);
 
             // 使用辅助方法创建颜色行 (ColorSetter 接口已改为 Consumer<Color>)
             Consumer<Color> defaultHighlightSetter = c -> clockPanel.setDefaultHighlightColor(c);
@@ -863,6 +1045,20 @@ public class AnalogClock extends JFrame {
 
             highlightList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
+            // 添加双击监听器，支持双击编辑
+            highlightList.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 2) {
+                        int index = highlightList.locationToIndex(e.getPoint());
+                        if (index >= 0) {
+                            highlightList.setSelectedIndex(index);
+                            addHighlightArea(listModel.getElementAt(index), false);
+                        }
+                    }
+                }
+            });
+
             panel.add(new JScrollPane(highlightList), BorderLayout.CENTER);
             panel.add(createHighlightButtonPanel(), BorderLayout.SOUTH);
 
@@ -874,7 +1070,7 @@ public class AnalogClock extends JFrame {
 
             JButton addButton = new JButton("添加新区域");
             addButton.addActionListener(e -> addHighlightArea(new HighlightSetting(9, 0, 18, 0,
-                    clockPanel.getDefaultHighlightColor()), true));
+                    clockPanel.getDefaultHighlightColor(), "", Color.WHITE), true));
 
             JButton editButton = new JButton("编辑选中区域");
             editButton.addActionListener(e -> {
@@ -900,8 +1096,8 @@ public class AnalogClock extends JFrame {
          * 添加/编辑高亮区域
          */
         private void addHighlightArea(HighlightSetting settingToEdit, boolean isNew) {
-            // UI 组件 - 【修改】布局改为 5行2列
-            JPanel inputPanel = new JPanel(new GridLayout(5, 2, 5, 5));
+            // UI 组件 - 布局改为 9行2列
+            JPanel inputPanel = new JPanel(new GridLayout(9, 2, 5, 5));
 
             // 小时 Spinner (0-23)
             SpinnerModel startHourModel = new SpinnerNumberModel(settingToEdit.getStartHour(), 0, 23, 1);
@@ -915,7 +1111,10 @@ public class AnalogClock extends JFrame {
             SpinnerModel endMinuteModel = new SpinnerNumberModel(settingToEdit.getEndMinute(), 0, 59, 1);
             JSpinner endMinuteSpinner = new JSpinner(endMinuteModel);
 
-            // 颜色按钮 (逻辑保持不变)
+            // 标签文本框
+            JTextField labelField = new JTextField(settingToEdit.getLabel());
+
+            // 高亮颜色按钮
             JButton colorButton = new JButton("更改颜色");
             colorButton.setBackground(settingToEdit.getHighlightColor());
             colorButton.setOpaque(true);
@@ -931,17 +1130,83 @@ public class AnalogClock extends JFrame {
                 }
             });
 
-            // 【修改】添加新的组件到面板
+            // 标签颜色按钮
+            JButton labelColorButton = new JButton("选择标签颜色");
+            labelColorButton.setBackground(settingToEdit.getLabelColor());
+            labelColorButton.setOpaque(true);
+            labelColorButton.setBorderPainted(false);
+            final Color[] tempLabelColor = {settingToEdit.getLabelColor()};
+            labelColorButton.addActionListener(e -> {
+                Color selectedColor = JColorChooser.showDialog(this, "选择标签颜色", tempLabelColor[0]);
+                if (selectedColor != null) {
+                    tempLabelColor[0] = selectedColor;
+                    labelColorButton.setBackground(tempLabelColor[0]);
+                }
+            });
+
+            // 进入动作下拉框
+            String[] actions = {"无", "弹窗提醒", "全屏提醒", "自动锁屏"};
+            String[] actionValues = {"none", "dialog", "fullscreen", "lock"};
+            
+            JComboBox<String> enterActionCombo = new JComboBox<>(actions);
+            String enterAction = settingToEdit.getEnterAction();
+            for (int i = 0; i < actionValues.length; i++) {
+                if (actionValues[i].equals(enterAction)) {
+                    enterActionCombo.setSelectedIndex(i);
+                    break;
+                }
+            }
+
+            // 退出动作下拉框
+            JComboBox<String> exitActionCombo = new JComboBox<>(actions);
+            String exitAction = settingToEdit.getExitAction();
+            for (int i = 0; i < actionValues.length; i++) {
+                if (actionValues[i].equals(exitAction)) {
+                    exitActionCombo.setSelectedIndex(i);
+                    break;
+                }
+            }
+
+            // 添加组件到面板
             inputPanel.add(new JLabel("起始时间 (时):"));
             inputPanel.add(startHourSpinner);
-            inputPanel.add(new JLabel("起始时间 (分):")); // 【新增】
-            inputPanel.add(startMinuteSpinner);         // 【新增】
+            inputPanel.add(new JLabel("起始时间 (分):"));
+            inputPanel.add(startMinuteSpinner);
             inputPanel.add(new JLabel("结束时间 (时):"));
             inputPanel.add(endHourSpinner);
-            inputPanel.add(new JLabel("结束时间 (分):")); // 【新增】
-            inputPanel.add(endMinuteSpinner);           // 【新增】
+            inputPanel.add(new JLabel("结束时间 (分):"));
+            inputPanel.add(endMinuteSpinner);
+            inputPanel.add(new JLabel("标签文本:"));
+            inputPanel.add(labelField);
             inputPanel.add(new JLabel("区域颜色:"));
             inputPanel.add(colorButton);
+            inputPanel.add(new JLabel("标签颜色:"));
+            inputPanel.add(labelColorButton);
+            inputPanel.add(new JLabel("进入触发:"));
+            
+            // 进入动作面板：下拉框 + 预览按钮
+            JPanel enterPanel = new JPanel(new BorderLayout(5, 0));
+            enterPanel.add(enterActionCombo, BorderLayout.CENTER);
+            JButton previewEnterBtn = new JButton("预览");
+            previewEnterBtn.addActionListener(e -> {
+                String selectedAction = actionValues[enterActionCombo.getSelectedIndex()];
+                previewAction(selectedAction, "进入" + labelField.getText(), tempColor[0], tempLabelColor[0]);
+            });
+            enterPanel.add(previewEnterBtn, BorderLayout.EAST);
+            inputPanel.add(enterPanel);
+            
+            inputPanel.add(new JLabel("退出触发:"));
+            
+            // 退出动作面板：下拉框 + 预览按钮
+            JPanel exitPanel = new JPanel(new BorderLayout(5, 0));
+            exitPanel.add(exitActionCombo, BorderLayout.CENTER);
+            JButton previewExitBtn = new JButton("预览");
+            previewExitBtn.addActionListener(e -> {
+                String selectedAction = actionValues[exitActionCombo.getSelectedIndex()];
+                previewAction(selectedAction, "退出" + labelField.getText(), tempColor[0], tempLabelColor[0]);
+            });
+            exitPanel.add(previewExitBtn, BorderLayout.EAST);
+            inputPanel.add(exitPanel);
 
             int result = JOptionPane.showConfirmDialog(this, inputPanel,
                     isNew ? "添加新的高亮时间区域" : "编辑高亮时间区域", JOptionPane.OK_CANCEL_OPTION);
@@ -951,8 +1216,9 @@ public class AnalogClock extends JFrame {
                 int startM = (int) startMinuteSpinner.getValue();
                 int endH = (int) endHourSpinner.getValue();
                 int endM = (int) endMinuteSpinner.getValue();
+                String label = labelField.getText();
 
-                // 校验逻辑 (现在基于总分钟数进行校验)
+                // 校验逻辑
                 int startTotalMinutes = startH * 60 + startM;
                 int endTotalMinutes = endH * 60 + endM;
 
@@ -960,17 +1226,17 @@ public class AnalogClock extends JFrame {
                     JOptionPane.showMessageDialog(this, "起始时间和结束时间不能相同。", "错误", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
-                // 【注意】：为了支持跨越午夜的周期（例如 23:00-05:00），我们允许 startTotalMinutes > endTotalMinutes。
-                // 仅在新增时需要考虑，如果是编辑，最好允许用户调整。
 
-                // 简单的校验：如果起始时间大于结束时间，且差值大于 12 小时，可能存在问题，但此处我们假定用户输入正确。
-
-                // 【修改】应用更改
+                // 应用更改
                 settingToEdit.startHour = startH;
                 settingToEdit.startMinute = startM;
                 settingToEdit.endHour = endH;
                 settingToEdit.endMinute = endM;
                 settingToEdit.setHighlightColor(tempColor[0]);
+                settingToEdit.setLabel(label);
+                settingToEdit.setLabelColor(tempLabelColor[0]);
+                settingToEdit.setEnterAction(actionValues[enterActionCombo.getSelectedIndex()]);
+                settingToEdit.setExitAction(actionValues[exitActionCombo.getSelectedIndex()]);
 
                 if (isNew) {
                     listModel.addElement(settingToEdit);
@@ -987,8 +1253,16 @@ public class AnalogClock extends JFrame {
             if (selectedIndex != -1) {
                 listModel.remove(selectedIndex);
                 updateClockHighlights();
-                if(selectedIndex > 0){
-                    highlightList.setSelectedIndex(selectedIndex - 1);
+                
+                // 删除后自动选中相邻的项，方便连续删除
+                if (listModel.getSize() > 0) {
+                    // 如果删除的是最后一项，选中新的最后一项
+                    if (selectedIndex >= listModel.getSize()) {
+                        highlightList.setSelectedIndex(listModel.getSize() - 1);
+                    } else {
+                        // 否则选中当前位置的项（原来的下一项）
+                        highlightList.setSelectedIndex(selectedIndex);
+                    }
                 }
             } else {
                 JOptionPane.showMessageDialog(this, "请先选择一个要删除的区域。", "提示", JOptionPane.INFORMATION_MESSAGE);
@@ -1003,7 +1277,41 @@ public class AnalogClock extends JFrame {
             }
             clockPanel.setHighlightAreas(newSettings);
 
-            ((AnalogClock) getParent()).saveCurrentConfig();
+            AnalogClock parent = (AnalogClock) getParent();
+            parent.saveCurrentConfig();
+            
+            // 更新时间范围监控器
+            if (parent.timeRangeMonitor != null) {
+                parent.timeRangeMonitor.updateHighlightAreas(newSettings);
+            }
+        }
+
+        // 预览触发效果
+        private void previewAction(String action, String message, Color bgColor, Color textColor) {
+            if ("none".equals(action)) {
+                JOptionPane.showMessageDialog(this, "未设置触发动作", "预览", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            
+            TimeRangeMonitor tempMonitor = new TimeRangeMonitor(new ArrayList<>());
+            switch (action) {
+                case "dialog":
+                    tempMonitor.previewDialogNotification(message);
+                    break;
+                case "fullscreen":
+                    tempMonitor.previewFullscreenNotification(message, bgColor, textColor);
+                    break;
+                case "lock":
+                    int result = JOptionPane.showConfirmDialog(this, 
+                        "确定要预览锁屏功能吗？\n这将真的锁定您的屏幕！", 
+                        "确认", 
+                        JOptionPane.YES_NO_OPTION, 
+                        JOptionPane.WARNING_MESSAGE);
+                    if (result == JOptionPane.YES_OPTION) {
+                        tempMonitor.previewLockScreen();
+                    }
+                    break;
+            }
         }
 
         private JPanel createButtonPanel() {
