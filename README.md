@@ -1,13 +1,21 @@
-# 介绍
-退出自动保存记录,打开自动加载记录
-<br>
-中键滚轮缩放,鼠标随意拖动位置
-<br>
+# 高亮时钟
+
 <img width="199" height="199" alt="image" src="https://github.com/user-attachments/assets/40062b5b-f726-4ea3-8b3c-3bcf0e4cd937" />
 
-<br>
-双击指定区域快速添加/编辑高亮区域或右键唤起菜单
-<br>
+## 什么是高亮时钟?
+高亮时钟是一款高效管理时间的工具,具有以下功能:
+- 强置顶(永远在前)
+- 自定义表盘/指针颜色
+- 自定义高亮区间
+- 自定义高亮进出触发事件(弹窗提醒/全屏提醒/自动锁屏),可预览
+- 退出自动保存当前配置,打开自动加载上次配置
+
+### 操作指南
+- 中键滚轮缩放
+- 鼠标随意拖动位置
+- 双击指定区域快速添加/编辑高亮区域
+- 右键唤起菜单
+
 <img width="279" height="279" alt="image" src="https://github.com/user-attachments/assets/b0bcc339-8268-40fd-b111-17d1b977e233" />
 <img width="279" height="279" alt="image" src="https://github.com/user-attachments/assets/adac3ea8-7535-409f-9ef3-1ccfe2b9c874" />
 <br>
