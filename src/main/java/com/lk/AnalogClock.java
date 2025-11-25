@@ -571,11 +571,14 @@ public class AnalogClock extends JFrame {
         protected void paintComponent(Graphics g) {
             Graphics2D g2d = (Graphics2D) g;
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2d.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
 
             int currentSize = (int) (BASE_CLOCK_SIZE * scale);
             currentSize = currentSize - currentSize%2;
             int centerX = currentSize / 2;
             int centerY = currentSize / 2;
+            int radius = currentSize / 2;
 
             LocalTime now = LocalTime.now();
             int hour = now.getHour() % 12;
@@ -586,39 +589,70 @@ public class AnalogClock extends JFrame {
             int currentHour24 = now.getHour();
             int currentMinute = now.getMinute();
 
-            // 1. 绘制表盘背景
+            // 1. 绘制表盘背景（深色简洁背景）
             g2d.setColor(clockColor);
             g2d.fillOval(0, 0, currentSize, currentSize);
 
-            // 2. 绘制时间区域高亮和标签
-            drawHighlightSections(g2d, currentSize, centerX, centerY, currentHour24, currentMinute);
+            // 2. 绘制圆环轨道背景（灰色底轨）- 底轨用圆头
+            int ringWidth = (int)(10 * scale);
+            int ringMargin = (int)(30 * scale);  // 增大边距，让圆环和数字之间有呼吸感
+            int ringRadius = radius - ringMargin - ringWidth / 2;
+            
+            g2d.setColor(new Color(60, 60, 60, 180));
+            g2d.setStroke(new BasicStroke(ringWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2d.drawOval(centerX - ringRadius, centerY - ringRadius, ringRadius * 2, ringRadius * 2);
 
-            // 3. 绘制刻度和数字
+            // 3. 绘制高亮圆环
+            drawHighlightRings(g2d, currentSize, centerX, centerY, ringRadius, ringWidth, currentHour24, currentMinute);
+
+            // 4. 绘制精细刻度
+            drawMinuteMarks(g2d, currentSize, centerX, centerY);
+
+            // 5. 绘制数字
             g2d.setColor(numberColor);
-            drawMarksAndNumbers(g2d, currentSize, centerX, centerY);
+            drawNumbers(g2d, currentSize, centerX, centerY);
 
-            // 4. 绘制指针
-            double secondAngle = Math.toRadians(second * 6 - 90);
-            drawHand(g2d, secondAngle, (int)(90*scale), (int)(2*scale), secondHandColor, centerX, centerY);
+            // 6. 绘制指针（带阴影）
+            drawHandWithShadow(g2d, Math.toRadians(hour * 30 + minute * 0.5 - 90), 
+                              (int)(45 * scale), (int)(5 * scale), hourHandColor, centerX, centerY);
+            drawHandWithShadow(g2d, Math.toRadians(minute * 6 + second * 0.1 - 90), 
+                              (int)(65 * scale), (int)(3 * scale), minuteHandColor, centerX, centerY);
+            drawHandWithShadow(g2d, Math.toRadians(second * 6 - 90), 
+                              (int)(75 * scale), (int)(1.5f * scale), secondHandColor, centerX, centerY);
 
-            double minuteAngle = Math.toRadians(minute * 6 + second * 0.1 - 90);
-            drawHand(g2d, minuteAngle, (int)(70*scale), (int)(4*scale), minuteHandColor, centerX, centerY);
-
-            double hourAngle = Math.toRadians(hour * 30 + minute * 0.5 - 90);
-            drawHand(g2d, hourAngle, (int)(50*scale), (int)(6*scale), hourHandColor, centerX, centerY);
-
-            // 5. 绘制中心点
-            g2d.setColor(Color.WHITE);
-            int centerDotSize = (int)(10*scale);
-            centerDotSize = centerDotSize - centerDotSize%2;
+            // 7. 绘制中心点（带高光）
+            int centerDotSize = (int)(12 * scale);
+            // 外圈阴影
+            g2d.setColor(new Color(0, 0, 0, 60));
+            g2d.fillOval(centerX - centerDotSize / 2 + 1, centerY - centerDotSize / 2 + 1, centerDotSize, centerDotSize);
+            // 主体
+            g2d.setColor(new Color(240, 240, 240));
             g2d.fillOval(centerX - centerDotSize / 2, centerY - centerDotSize / 2, centerDotSize, centerDotSize);
+            // 高光
+            int highlightSize = (int)(4 * scale);
+            g2d.setColor(new Color(255, 255, 255, 200));
+            g2d.fillOval(centerX - highlightSize / 2 - 1, centerY - highlightSize / 2 - 1, highlightSize, highlightSize);
         }
 
         /**
-         * 绘制高亮区域和标签（带径向渐变和内发光效果）
+         * 绘制高亮圆环（Apple Watch 风格）
+         * - 检测相邻时间段，中间用平头连接，两端用圆头
+         * - 文字沿弧线切线方向排列
          */
-        private void drawHighlightSections(Graphics2D g2d, int currentSize, int centerX, int centerY, int currentHour24, int currentMinute) {
-            for (HighlightSetting setting : highlightAreas) {
+        private void drawHighlightRings(Graphics2D g2d, int currentSize, int centerX, int centerY, 
+                                       int ringRadius, int ringWidth, int currentHour24, int currentMinute) {
+            
+            // 按开始时间排序
+            List<HighlightSetting> sortedAreas = new ArrayList<>(highlightAreas);
+            sortedAreas.sort((a, b) -> {
+                int aStart = a.getStartHour() * 60 + a.getStartMinute();
+                int bStart = b.getStartHour() * 60 + b.getStartMinute();
+                return Integer.compare(aStart, bStart);
+            });
+            
+            for (int idx = 0; idx < sortedAreas.size(); idx++) {
+                HighlightSetting setting = sortedAreas.get(idx);
+                
                 // 1. 将 24 小时制的 HH:MM 转换为总分钟数（0 到 1440）
                 int startTotalMinutes = setting.getStartHour() * 60 + setting.getStartMinute();
                 int endTotalMinutes = setting.getEndHour() * 60 + setting.getEndMinute();
@@ -635,70 +669,153 @@ public class AnalogClock extends JFrame {
                     sweepAngle = (1440 - startTotalMinutes + endTotalMinutes) * 0.5f;
                 }
 
-                int margin = (int) (BASE_CLOCK_SIZE * scale * 0.06);
-                margin = margin - margin%2;
-                int arcX = margin / 2;
-                int arcY = margin / 2;
-                int arcSize = currentSize - margin;
-
                 // 4. 判断当前时间是否在此高亮区域内
                 int currentTotalMinutes = currentHour24 * 60 + currentMinute;
                 boolean isCurrentTimeInRange = isTimeInHighlightRange(currentTotalMinutes, startTotalMinutes, endTotalMinutes);
-
-                Color baseColor = setting.getHighlightColor();
                 boolean isHovered = (setting == hoveredSetting);
 
-                // 5. 只在当前时间落在高亮区域时应用渐变效果
-                if (isCurrentTimeInRange) {
-                    // 创建径向渐变：从中心到边缘，增强对比
-                    float gradientRadius = currentSize / 2.0f;
-                    Color centerColor = brightenColor(baseColor, 1.8f);  // 中心更亮
-                    Color edgeColor = darkenColor(baseColor, 0.7f);      // 边缘变暗
+                Color baseColor = setting.getHighlightColor();
+                
+                // 5. 检测是否与前一个/后一个时间段相邻
+                boolean hasAdjacentBefore = false;
+                boolean hasAdjacentAfter = false;
+                
+                for (int j = 0; j < sortedAreas.size(); j++) {
+                    if (j == idx) continue;
+                    HighlightSetting other = sortedAreas.get(j);
+                    int otherStart = other.getStartHour() * 60 + other.getStartMinute();
+                    int otherEnd = other.getEndHour() * 60 + other.getEndMinute();
                     
-                    RadialGradientPaint gradient = new RadialGradientPaint(
-                        centerX, centerY, gradientRadius,
-                        new float[]{0.0f, 0.5f, 1.0f},
-                        new Color[]{centerColor, baseColor, edgeColor}
+                    // 检查是否有其他段的结束时间等于当前段的开始时间
+                    if (otherEnd == startTotalMinutes) {
+                        hasAdjacentBefore = true;
+                    }
+                    // 检查是否有其他段的开始时间等于当前段的结束时间
+                    if (otherStart == endTotalMinutes) {
+                        hasAdjacentAfter = true;
+                    }
+                }
+                
+                // 悬停时放大圆环宽度
+                int actualRingWidth = isHovered ? (int)(ringWidth + 4 * scale) : ringWidth;
+                
+                // 6. 创建圆环形状
+                // 使用填充方式绘制圆环（内外两个椭圆的差集），端点用半圆
+                float halfWidth = actualRingWidth / 2.0f;
+                float innerRadius = ringRadius - halfWidth;
+                float outerRadius = ringRadius + halfWidth;
+                
+                // 创建主体弧形区域（使用扇形差集方式）
+                java.awt.geom.Arc2D outerArc = new java.awt.geom.Arc2D.Float(
+                    centerX - outerRadius, centerY - outerRadius,
+                    outerRadius * 2, outerRadius * 2,
+                    sweepStartAngle, -sweepAngle,
+                    java.awt.geom.Arc2D.PIE
+                );
+                java.awt.geom.Arc2D innerArc = new java.awt.geom.Arc2D.Float(
+                    centerX - innerRadius, centerY - innerRadius,
+                    innerRadius * 2, innerRadius * 2,
+                    sweepStartAngle, -sweepAngle,
+                    java.awt.geom.Arc2D.PIE
+                );
+                
+                java.awt.geom.Area ringArea = new java.awt.geom.Area(outerArc);
+                ringArea.subtract(new java.awt.geom.Area(innerArc));
+                
+                // 在独立端点添加半圆帽子（圆心在弧线的端点上，半径为线宽的一半）
+                if (!hasAdjacentBefore) {
+                    // 起始端的半圆帽子
+                    double startRad = Math.toRadians(sweepStartAngle);
+                    float capCenterX = (float)(centerX + ringRadius * Math.cos(startRad));
+                    float capCenterY = (float)(centerY - ringRadius * Math.sin(startRad));
+                    java.awt.geom.Ellipse2D startCap = new java.awt.geom.Ellipse2D.Float(
+                        capCenterX - halfWidth, capCenterY - halfWidth,
+                        actualRingWidth, actualRingWidth
                     );
+                    ringArea.add(new java.awt.geom.Area(startCap));
+                }
+                
+                if (!hasAdjacentAfter) {
+                    // 结束端的半圆帽子
+                    double endRad = Math.toRadians(sweepStartAngle - sweepAngle);
+                    float capCenterX = (float)(centerX + ringRadius * Math.cos(endRad));
+                    float capCenterY = (float)(centerY - ringRadius * Math.sin(endRad));
+                    java.awt.geom.Ellipse2D endCap = new java.awt.geom.Ellipse2D.Float(
+                        capCenterX - halfWidth, capCenterY - halfWidth,
+                        actualRingWidth, actualRingWidth
+                    );
+                    ringArea.add(new java.awt.geom.Area(endCap));
+                }
+
+                // 根据状态设置不同的绘制效果
+                if (isCurrentTimeInRange) {
+                    // 当前时间在范围内：柔和渐变发光效果（多层，从外到内透明度递增）
+                    int glowLayers = 5;
+                    float maxGlowSize = 8 * scale;
                     
-                    g2d.setPaint(gradient);
+                    for (int layer = glowLayers; layer >= 1; layer--) {
+                        float layerGlowSize = maxGlowSize * layer / glowLayers;
+                        float glowHalfWidth = halfWidth + layerGlowSize;
+                        float glowInnerRadius = ringRadius - glowHalfWidth;
+                        float glowOuterRadius = ringRadius + glowHalfWidth;
+                        
+                        java.awt.geom.Arc2D glowOuterArc = new java.awt.geom.Arc2D.Float(
+                            centerX - glowOuterRadius, centerY - glowOuterRadius,
+                            glowOuterRadius * 2, glowOuterRadius * 2,
+                            sweepStartAngle, -sweepAngle,
+                            java.awt.geom.Arc2D.PIE
+                        );
+                        java.awt.geom.Arc2D glowInnerArc = new java.awt.geom.Arc2D.Float(
+                            centerX - glowInnerRadius, centerY - glowInnerRadius,
+                            glowInnerRadius * 2, glowInnerRadius * 2,
+                            sweepStartAngle, -sweepAngle,
+                            java.awt.geom.Arc2D.PIE
+                        );
+                        
+                        java.awt.geom.Area glowArea = new java.awt.geom.Area(glowOuterArc);
+                        glowArea.subtract(new java.awt.geom.Area(glowInnerArc));
+                        
+                        // 发光层的端点帽子
+                        if (!hasAdjacentBefore) {
+                            double startRad = Math.toRadians(sweepStartAngle);
+                            float capCenterX = (float)(centerX + ringRadius * Math.cos(startRad));
+                            float capCenterY = (float)(centerY - ringRadius * Math.sin(startRad));
+                            java.awt.geom.Ellipse2D startCap = new java.awt.geom.Ellipse2D.Float(
+                                capCenterX - glowHalfWidth, capCenterY - glowHalfWidth,
+                                glowHalfWidth * 2, glowHalfWidth * 2
+                            );
+                            glowArea.add(new java.awt.geom.Area(startCap));
+                        }
+                        if (!hasAdjacentAfter) {
+                            double endRad = Math.toRadians(sweepStartAngle - sweepAngle);
+                            float capCenterX = (float)(centerX + ringRadius * Math.cos(endRad));
+                            float capCenterY = (float)(centerY - ringRadius * Math.sin(endRad));
+                            java.awt.geom.Ellipse2D endCap = new java.awt.geom.Ellipse2D.Float(
+                                capCenterX - glowHalfWidth, capCenterY - glowHalfWidth,
+                                glowHalfWidth * 2, glowHalfWidth * 2
+                            );
+                            glowArea.add(new java.awt.geom.Area(endCap));
+                        }
+                        
+                        // 透明度从外层到内层递增：外层最淡，内层较浓
+                        int alpha = 15 + (glowLayers - layer) * 8;
+                        Color glowColor = new Color(baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue(), alpha);
+                        g2d.setColor(glowColor);
+                        g2d.fill(glowArea);
+                    }
+                    
+                    // 主体颜色加亮
+                    g2d.setColor(brightenColor(baseColor, 1.2f));
                 } else {
-                    // 不在当前时间范围内，使用纯色
                     g2d.setColor(baseColor);
                 }
                 
-                // 6. 绘制高亮区域本体
-                g2d.fillArc(arcX, arcY, arcSize, arcSize,
-                        (int) sweepStartAngle, (int) -sweepAngle);
+                // 一次性填充合并后的形状，避免重叠
+                g2d.fill(ringArea);
 
-                // 7. 鼠标悬停效果：绘制多层内发光边框（向内绘制，不会被截断）
-                if (isHovered) {
-                    // 绘制多层向内的发光边框
-                    for (int i = 1; i <= 5; i++) {
-                        int glowAlpha = 60 - i * 10; // 从内到外逐渐变淡
-                        Color glowColor = new Color(255, 255, 255, glowAlpha);
-                        g2d.setColor(glowColor);
-                        
-                        float strokeWidth = (5 - i + 1) * 2 * scale;
-                        g2d.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
-                        g2d.drawArc(arcX, arcY, arcSize, arcSize,
-                                (int) sweepStartAngle, (int) -sweepAngle);
-                    }
-                    
-                    // 最外层绘制明亮的主边框
-                    Color borderColor = brightenColor(baseColor, 2.2f);
-                    g2d.setColor(borderColor);
-                    g2d.setStroke(new BasicStroke((int)(3 * scale), BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
-                    g2d.drawArc(arcX, arcY, arcSize, arcSize,
-                            (int) sweepStartAngle, (int) -sweepAngle);
-                    
-                    // 恢复默认画笔
-                    g2d.setStroke(new BasicStroke(1));
-                }
-
+                // 7. 绘制标签（沿弧线切线方向排列）
                 if (showLabels && setting.getLabel() != null && !setting.getLabel().trim().isEmpty()) {
-                    // 简化角度计算
-                    float startAngle = startTotalMinutes * 0.5f; // 直接转换为角度
+                    float startAngle = startTotalMinutes * 0.5f;
                     float endAngle = endTotalMinutes * 0.5f;
 
                     float midAngleDeg;
@@ -709,29 +826,123 @@ public class AnalogClock extends JFrame {
                         if (midAngleDeg >= 360) midAngleDeg -= 360;
                     }
 
-                    // 转换为弧度（从12点开始顺时针）
                     double awtAngleRad = Math.toRadians(90 - midAngleDeg);
-
-                    // 计算标签位置
-                    int radius = currentSize / 2;
-                    int labelRadius = (int) (radius * 0.55);
+                    int labelRadius = (int) (ringRadius * 0.65);
                     int labelX = (int) (centerX + labelRadius * Math.cos(awtAngleRad));
                     int labelY = (int) (centerY - labelRadius * Math.sin(awtAngleRad));
 
-                    // 设置字体和颜色
+                    java.awt.geom.AffineTransform oldTransform = g2d.getTransform();
+                    
+                    // 文字沿切线方向：切线角度 = 径向角度 + 90度
+                    // midAngleDeg 是从12点顺时针的角度
+                    // 切线方向应该是垂直于径向的
+                    double tangentAngle = midAngleDeg;  // 切线方向（沿圆周）
+                    
+                    // 如果在下半圆（90-270度），文字会倒过来，需要翻转
+                    if (midAngleDeg > 90 && midAngleDeg < 270) {
+                        tangentAngle += 180;
+                    }
+                    
+                    g2d.translate(labelX, labelY);
+                    g2d.rotate(Math.toRadians(tangentAngle));
+
                     g2d.setColor(setting.getLabelColor());
-                    Font labelFont = new Font("Microsoft YaHei", Font.BOLD, (int)(12 * scale));
+                    Font labelFont = new Font("Microsoft YaHei", Font.BOLD, (int)(9 * scale));
                     g2d.setFont(labelFont);
 
-                    // 居中绘制文本
                     FontMetrics fm = g2d.getFontMetrics();
                     String label = setting.getLabel().trim();
                     int labelWidth = fm.stringWidth(label);
-                    int labelHeight = fm.getAscent(); // 使用ascent而不是height来更好居中
+                    int labelHeight = fm.getAscent();
 
-                    g2d.drawString(label, labelX - labelWidth / 2, labelY + labelHeight / 2);
+                    g2d.drawString(label, -labelWidth / 2, labelHeight / 3);
+                    
+                    g2d.setTransform(oldTransform);
                 }
             }
+            
+            g2d.setStroke(new BasicStroke(1));
+        }
+
+        /**
+         * 绘制分钟刻度
+         */
+        private void drawMinuteMarks(Graphics2D g2d, int currentSize, int centerX, int centerY) {
+            int radius = currentSize / 2;
+            
+            for (int i = 0; i < 60; i++) {
+                double angle = Math.toRadians(i * 6 - 90);
+                
+                int outerRadius, innerRadius;
+                Color markColor;
+                float strokeWidth;
+                
+                if (i % 5 == 0) {
+                    // 小时刻度（较长较粗）
+                    outerRadius = (int)(radius * 0.98);
+                    innerRadius = (int)(radius * 0.90);
+                    markColor = new Color(numberColor.getRed(), numberColor.getGreen(), numberColor.getBlue(), 200);
+                    strokeWidth = 2 * scale;
+                } else {
+                    // 分钟刻度（较短较细）
+                    outerRadius = (int)(radius * 0.98);
+                    innerRadius = (int)(radius * 0.94);
+                    markColor = new Color(numberColor.getRed(), numberColor.getGreen(), numberColor.getBlue(), 80);
+                    strokeWidth = 1 * scale;
+                }
+                
+                int x1 = (int)(centerX + outerRadius * Math.cos(angle));
+                int y1 = (int)(centerY + outerRadius * Math.sin(angle));
+                int x2 = (int)(centerX + innerRadius * Math.cos(angle));
+                int y2 = (int)(centerY + innerRadius * Math.sin(angle));
+                
+                g2d.setColor(markColor);
+                g2d.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2d.drawLine(x1, y1, x2, y2);
+            }
+        }
+
+        /**
+         * 绘制数字 - 增加与圆环的间距
+         */
+        private void drawNumbers(Graphics2D g2d, int currentSize, int centerX, int centerY) {
+            Font font = new Font("Arial", Font.PLAIN, (int)(12 * scale));
+            g2d.setFont(font);
+            FontMetrics fm = g2d.getFontMetrics(font);
+            int radius = currentSize / 2;
+
+            for (int i = 1; i <= 12; i++) {
+                double angle = Math.toRadians(i * 30 - 90);
+                // 数字位置稍微外移，增加与圆环的间距
+                int x = Math.toIntExact(Math.round(centerX + radius * 0.82 * Math.cos(angle)));
+                int y = Math.toIntExact(Math.round(centerY + radius * 0.82 * Math.sin(angle)));
+
+                String num = String.valueOf(i);
+                int strWidth = fm.stringWidth(num);
+                int strHeight = fm.getAscent();
+                
+                // 数字颜色带透明度，更柔和
+                g2d.setColor(new Color(numberColor.getRed(), numberColor.getGreen(), numberColor.getBlue(), 220));
+                g2d.drawString(num, x - strWidth / 2, y + strHeight / 3);
+            }
+        }
+
+        /**
+         * 绘制带阴影的指针
+         */
+        private void drawHandWithShadow(Graphics2D g2d, double angle, int length, int thickness, Color color, int centerX, int centerY) {
+            int x = (int) (centerX + length * Math.cos(angle));
+            int y = (int) (centerY + length * Math.sin(angle));
+
+            // 绘制阴影
+            g2d.setColor(new Color(0, 0, 0, 40));
+            g2d.setStroke(new BasicStroke(thickness + 2, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2d.drawLine(centerX + 2, centerY + 2, x + 2, y + 2);
+
+            // 绘制指针主体
+            g2d.setColor(color);
+            g2d.setStroke(new BasicStroke(thickness, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2d.drawLine(centerX, centerY, x, y);
         }
 
         /**
@@ -762,52 +973,6 @@ public class AnalogClock extends JFrame {
             b = Math.min(255, (int)(b * factor));
             
             return new Color(r, g, b, alpha);
-        }
-
-        /**
-         * 变暗颜色（用于渐变边缘）
-         */
-        private Color darkenColor(Color color, float factor) {
-            int r = color.getRed();
-            int g = color.getGreen();
-            int b = color.getBlue();
-            int alpha = color.getAlpha();
-            
-            // 降低RGB值
-            r = (int)(r * factor);
-            g = (int)(g * factor);
-            b = (int)(b * factor);
-            
-            return new Color(r, g, b, alpha);
-        }
-
-        private void drawHand(Graphics2D g2d, double angle, int length, int thickness, Color color, int centerX, int centerY) {
-            int x = (int) (centerX + length * Math.cos(angle));
-            int y = (int) (centerY + length * Math.sin(angle));
-
-            g2d.setColor(color);
-            g2d.setStroke(new BasicStroke(thickness, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            g2d.drawLine(centerX, centerY, x, y);
-        }
-
-        private void drawMarksAndNumbers(Graphics2D g2d, int currentSize, int centerX, int centerY) {
-            Font font = new Font("Microsoft YaHei", Font.BOLD, (int)(14 * scale));
-            g2d.setFont(font);
-            FontMetrics fm = g2d.getFontMetrics(font);
-            int radius = currentSize / 2;
-
-            for (int i = 1; i <= 12; i++) {
-                double angle = Math.toRadians(i * 30 - 90);
-                int x = Math.toIntExact(Math.round(centerX + radius * 0.86 * Math.cos(angle)));
-                int y = Math.toIntExact(Math.round(centerY + radius * 0.86 * Math.sin(angle)));
-
-                String num = String.valueOf(i);
-                int strWidth = fm.stringWidth(num);
-                strWidth = strWidth - strWidth%2;
-                int strHeight = fm.getHeight();
-                strHeight = strHeight - strHeight%4;
-                g2d.drawString(num, x - strWidth / 2, y + strHeight / 4);
-            }
         }
     }
 
