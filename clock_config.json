@@ -1,7 +1,7 @@
 {
   "scale" : 0.99999976,
-  "windowX" : 1650,
-  "windowY" : 92,
+  "windowX" : 1634,
+  "windowY" : 185,
   "showLabels" : true,
   "clockColor" : "#333333",
   "defaultHighlightColor" : "#DD7700",
@@ -17,8 +17,21 @@
     "label" : "上班",
     "labelColor" : "#FFFFFF",
     "highlightColor" : "#DD7500",
-    "enterAction" : "fullscreen",
-    "exitAction" : "none"
+    "enter" : {
+      "action" : "fullscreen",
+      "text" : "",
+      "intervalMinutes" : 0
+    },
+    "exit" : {
+      "action" : "none",
+      "text" : "",
+      "intervalMinutes" : 0
+    },
+    "interval" : {
+      "action" : "dialog",
+      "text" : "休息",
+      "intervalMinutes" : 25
+    }
   }, {
     "startHour" : 11,
     "startMinute" : 38,
@@ -27,8 +40,21 @@
     "label" : "午休",
     "labelColor" : "#FFFFFF",
     "highlightColor" : "#33AA00",
-    "enterAction" : "fullscreen",
-    "exitAction" : "none"
+    "enter" : {
+      "action" : "fullscreen",
+      "text" : null,
+      "intervalMinutes" : 0
+    },
+    "exit" : {
+      "action" : "none",
+      "text" : null,
+      "intervalMinutes" : 0
+    },
+    "interval" : {
+      "action" : "none",
+      "text" : null,
+      "intervalMinutes" : 0
+    }
   }, {
     "startHour" : 13,
     "startMinute" : 0,
@@ -37,7 +63,20 @@
     "label" : "上班",
     "labelColor" : "#FFFFFF",
     "highlightColor" : "#DD7700",
-    "enterAction" : "fullscreen",
-    "exitAction" : "lock"
+    "enter" : {
+      "action" : "fullscreen",
+      "text" : "",
+      "intervalMinutes" : 0
+    },
+    "exit" : {
+      "action" : "lock",
+      "text" : "",
+      "intervalMinutes" : 0
+    },
+    "interval" : {
+      "action" : "dialog",
+      "text" : "休息",
+      "intervalMinutes" : 25
+    }
   } ]
 }

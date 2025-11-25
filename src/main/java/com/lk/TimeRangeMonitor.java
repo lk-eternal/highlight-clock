@@ -14,6 +14,7 @@ import java.util.Map;
 public class TimeRangeMonitor {
     
     private Map<String, Boolean> rangeStates = new HashMap<>();
+    private Map<String, Long> lastIntervalTriggerTime = new HashMap<>();
     private List<AnalogClock.HighlightSetting> highlightAreas;
     
     public TimeRangeMonitor(List<AnalogClock.HighlightSetting> highlightAreas) {
@@ -32,12 +33,18 @@ public class TimeRangeMonitor {
             
             boolean inRange = isTimeInRange(currentMinutes, startMinutes, endMinutes);
             rangeStates.put(key, inRange);
+            
+            // 初始化时，如果在范围内，设置最后触发时间为当前时间，避免立即触发间隔
+            if (inRange) {
+                lastIntervalTriggerTime.put(key, System.currentTimeMillis());
+            }
         }
     }
     
     public void checkAndTrigger() {
         LocalTime now = LocalTime.now();
         int currentMinutes = now.getHour() * 60 + now.getMinute();
+        long currentTimeMillis = System.currentTimeMillis();
         
         for (AnalogClock.HighlightSetting setting : highlightAreas) {
             String key = getSettingKey(setting);
@@ -49,27 +56,58 @@ public class TimeRangeMonitor {
             
             // 状态变化：进入区域
             if (!wasInRange && isInRange) {
-                triggerAction(setting, true);
+                triggerAction(setting, setting.getEnter(), "enter");
                 rangeStates.put(key, true);
+                // 进入时重置间隔触发计时
+                lastIntervalTriggerTime.put(key, currentTimeMillis);
             }
             // 状态变化：退出区域
             else if (wasInRange && !isInRange) {
-                triggerAction(setting, false);
+                triggerAction(setting, setting.getExit(), "exit");
                 rangeStates.put(key, false);
+                lastIntervalTriggerTime.remove(key);
+            }
+            // 持续在区域内：检查间隔触发
+            else if (isInRange) {
+                ClockConfig.TriggerConfig intervalConfig = setting.getInterval();
+                if (intervalConfig != null && intervalConfig.intervalMinutes > 0 && !"none".equals(intervalConfig.action)) {
+                    long lastTrigger = lastIntervalTriggerTime.getOrDefault(key, 0L);
+                    long intervalMillis = intervalConfig.intervalMinutes * 60 * 1000L;
+                    
+                    if (currentTimeMillis - lastTrigger >= intervalMillis) {
+                        triggerAction(setting, intervalConfig, "interval");
+                        lastIntervalTriggerTime.put(key, currentTimeMillis);
+                    }
+                }
             }
         }
     }
     
-    private void triggerAction(AnalogClock.HighlightSetting setting, boolean isEnter) {
-        String action = isEnter ? setting.getEnterAction() : setting.getExitAction();
-        if (action == null || "none".equals(action)) {
+    private void triggerAction(AnalogClock.HighlightSetting setting, ClockConfig.TriggerConfig config, String triggerType) {
+        if (config == null || config.action == null || "none".equals(config.action)) {
             return;
         }
         
-        String message = (isEnter ? "进入" : "退出") + 
-                        (setting.getLabel().isEmpty() ? "时间段" : setting.getLabel());
+        String message = config.text;
+        if (message == null || message.trim().isEmpty()) {
+            // 如果没有自定义文案，使用默认文案
+            String label = setting.getLabel().isEmpty() ? "时间段" : setting.getLabel();
+            switch (triggerType) {
+                case "enter":
+                    message = "进入" + label;
+                    break;
+                case "exit":
+                    message = "退出" + label;
+                    break;
+                case "interval":
+                    message = label + "提醒";
+                    break;
+                default:
+                    message = "时间提醒";
+            }
+        }
         
-        switch (action) {
+        switch (config.action) {
             case "dialog":
                 showDialogNotification(message);
                 break;
@@ -205,4 +243,3 @@ public class TimeRangeMonitor {
         lockScreen();
     }
 }
-

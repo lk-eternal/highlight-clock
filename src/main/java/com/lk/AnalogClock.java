@@ -222,8 +222,9 @@ public class AnalogClock extends JFrame {
                     setting.getHighlightColor(),
                     setting.getLabel(),
                     setting.getLabelColor(),
-                    setting.getEnterAction(),
-                    setting.getExitAction()
+                    setting.getEnter(),
+                    setting.getExit(),
+                    setting.getInterval()
             ));
         }
         config.highlightAreas = serializableList;
@@ -284,8 +285,9 @@ public class AnalogClock extends JFrame {
                             shs.highlightColor,
                             shs.label != null ? shs.label : "",
                             shs.labelColor != null ? shs.labelColor : Color.WHITE,
-                            shs.enterAction != null ? shs.enterAction : "none",
-                            shs.exitAction != null ? shs.exitAction : "none"
+                            shs.enter,
+                            shs.exit,
+                            shs.interval
                     ));
                 }
             } else {
@@ -821,14 +823,18 @@ public class AnalogClock extends JFrame {
         private Color highlightColor;
         private String label;
         private Color labelColor;
-        private String enterAction;
-        private String exitAction;
+        
+        private ClockConfig.TriggerConfig enter;
+        private ClockConfig.TriggerConfig exit;
+        private ClockConfig.TriggerConfig interval;
 
         public HighlightSetting(int startHour, int startMinute, int endHour, int endMinute, Color highlightColor, String label, Color labelColor) {
-            this(startHour, startMinute, endHour, endMinute, highlightColor, label, labelColor, "none", "none");
+            this(startHour, startMinute, endHour, endMinute, highlightColor, label, labelColor, 
+                 new ClockConfig.TriggerConfig(), new ClockConfig.TriggerConfig(), new ClockConfig.TriggerConfig());
         }
 
-        public HighlightSetting(int startHour, int startMinute, int endHour, int endMinute, Color highlightColor, String label, Color labelColor, String enterAction, String exitAction) {
+        public HighlightSetting(int startHour, int startMinute, int endHour, int endMinute, Color highlightColor, String label, Color labelColor,
+                              ClockConfig.TriggerConfig enter, ClockConfig.TriggerConfig exit, ClockConfig.TriggerConfig interval) {
             this.startHour = startHour;
             this.startMinute = startMinute;
             this.endHour = endHour;
@@ -836,8 +842,9 @@ public class AnalogClock extends JFrame {
             this.highlightColor = highlightColor;
             this.label = label;
             this.labelColor = labelColor;
-            this.enterAction = enterAction != null ? enterAction : "none";
-            this.exitAction = exitAction != null ? exitAction : "none";
+            this.enter = enter != null ? enter : new ClockConfig.TriggerConfig();
+            this.exit = exit != null ? exit : new ClockConfig.TriggerConfig();
+            this.interval = interval != null ? interval : new ClockConfig.TriggerConfig();
         }
 
         public int getStartHour() { return startHour; }
@@ -847,8 +854,10 @@ public class AnalogClock extends JFrame {
         public Color getHighlightColor() { return highlightColor; }
         public String getLabel() { return label; }
         public Color getLabelColor() { return labelColor; }
-        public String getEnterAction() { return enterAction; }
-        public String getExitAction() { return exitAction; }
+        
+        public ClockConfig.TriggerConfig getEnter() { return enter; }
+        public ClockConfig.TriggerConfig getExit() { return exit; }
+        public ClockConfig.TriggerConfig getInterval() { return interval; }
 
         public void setHighlightColor(Color highlightColor) {
             this.highlightColor = highlightColor;
@@ -860,14 +869,6 @@ public class AnalogClock extends JFrame {
 
         public void setLabelColor(Color labelColor) {
             this.labelColor = labelColor;
-        }
-
-        public void setEnterAction(String enterAction) {
-            this.enterAction = enterAction;
-        }
-
-        public void setExitAction(String exitAction) {
-            this.exitAction = exitAction;
         }
 
         @Override
@@ -1096,8 +1097,13 @@ public class AnalogClock extends JFrame {
          * 添加/编辑高亮区域
          */
         private void addHighlightArea(HighlightSetting settingToEdit, boolean isNew) {
-            // UI 组件 - 布局改为 9行2列
-            JPanel inputPanel = new JPanel(new GridLayout(9, 2, 5, 5));
+            JPanel mainPanel = new JPanel();
+            mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+            mainPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            // 1. 基本设置面板
+            JPanel basicPanel = new JPanel(new GridLayout(7, 2, 5, 5));
+            basicPanel.setBorder(BorderFactory.createTitledBorder("基本设置"));
 
             // 小时 Spinner (0-23)
             SpinnerModel startHourModel = new SpinnerNumberModel(settingToEdit.getStartHour(), 0, 23, 1);
@@ -1144,71 +1150,46 @@ public class AnalogClock extends JFrame {
                 }
             });
 
-            // 进入动作下拉框
-            String[] actions = {"无", "弹窗提醒", "全屏提醒", "自动锁屏"};
-            String[] actionValues = {"none", "dialog", "fullscreen", "lock"};
+            basicPanel.add(new JLabel("起始时间 (时):"));
+            basicPanel.add(startHourSpinner);
+            basicPanel.add(new JLabel("起始时间 (分):"));
+            basicPanel.add(startMinuteSpinner);
+            basicPanel.add(new JLabel("结束时间 (时):"));
+            basicPanel.add(endHourSpinner);
+            basicPanel.add(new JLabel("结束时间 (分):"));
+            basicPanel.add(endMinuteSpinner);
+            basicPanel.add(new JLabel("标签文本:"));
+            basicPanel.add(labelField);
+            basicPanel.add(new JLabel("区域颜色:"));
+            basicPanel.add(colorButton);
+            basicPanel.add(new JLabel("标签颜色:"));
+            basicPanel.add(labelColorButton);
             
-            JComboBox<String> enterActionCombo = new JComboBox<>(actions);
-            String enterAction = settingToEdit.getEnterAction();
-            for (int i = 0; i < actionValues.length; i++) {
-                if (actionValues[i].equals(enterAction)) {
-                    enterActionCombo.setSelectedIndex(i);
-                    break;
-                }
-            }
+            mainPanel.add(basicPanel);
+            mainPanel.add(Box.createVerticalStrut(10));
 
-            // 退出动作下拉框
-            JComboBox<String> exitActionCombo = new JComboBox<>(actions);
-            String exitAction = settingToEdit.getExitAction();
-            for (int i = 0; i < actionValues.length; i++) {
-                if (actionValues[i].equals(exitAction)) {
-                    exitActionCombo.setSelectedIndex(i);
-                    break;
-                }
-            }
+            // 2. 创建触发器设置面板
+            TriggerPanel enterTriggerPanel = new TriggerPanel(settingToEdit.getEnter(), "进入", false, tempColor, tempLabelColor);
+            enterTriggerPanel.setBorder(BorderFactory.createTitledBorder("进入触发"));
+            mainPanel.add(enterTriggerPanel);
+            mainPanel.add(Box.createVerticalStrut(10));
+            
+            TriggerPanel exitTriggerPanel = new TriggerPanel(settingToEdit.getExit(), "退出", false, tempColor, tempLabelColor);
+            exitTriggerPanel.setBorder(BorderFactory.createTitledBorder("退出触发"));
+            mainPanel.add(exitTriggerPanel);
+            mainPanel.add(Box.createVerticalStrut(10));
+            
+            TriggerPanel intervalTriggerPanel = new TriggerPanel(settingToEdit.getInterval(), "间隔", true, tempColor, tempLabelColor);
+            intervalTriggerPanel.setBorder(BorderFactory.createTitledBorder("间隔触发"));
+            mainPanel.add(intervalTriggerPanel);
 
-            // 添加组件到面板
-            inputPanel.add(new JLabel("起始时间 (时):"));
-            inputPanel.add(startHourSpinner);
-            inputPanel.add(new JLabel("起始时间 (分):"));
-            inputPanel.add(startMinuteSpinner);
-            inputPanel.add(new JLabel("结束时间 (时):"));
-            inputPanel.add(endHourSpinner);
-            inputPanel.add(new JLabel("结束时间 (分):"));
-            inputPanel.add(endMinuteSpinner);
-            inputPanel.add(new JLabel("标签文本:"));
-            inputPanel.add(labelField);
-            inputPanel.add(new JLabel("区域颜色:"));
-            inputPanel.add(colorButton);
-            inputPanel.add(new JLabel("标签颜色:"));
-            inputPanel.add(labelColorButton);
-            inputPanel.add(new JLabel("进入触发:"));
-            
-            // 进入动作面板：下拉框 + 预览按钮
-            JPanel enterPanel = new JPanel(new BorderLayout(5, 0));
-            enterPanel.add(enterActionCombo, BorderLayout.CENTER);
-            JButton previewEnterBtn = new JButton("预览");
-            previewEnterBtn.addActionListener(e -> {
-                String selectedAction = actionValues[enterActionCombo.getSelectedIndex()];
-                previewAction(selectedAction, "进入" + labelField.getText(), tempColor[0], tempLabelColor[0]);
-            });
-            enterPanel.add(previewEnterBtn, BorderLayout.EAST);
-            inputPanel.add(enterPanel);
-            
-            inputPanel.add(new JLabel("退出触发:"));
-            
-            // 退出动作面板：下拉框 + 预览按钮
-            JPanel exitPanel = new JPanel(new BorderLayout(5, 0));
-            exitPanel.add(exitActionCombo, BorderLayout.CENTER);
-            JButton previewExitBtn = new JButton("预览");
-            previewExitBtn.addActionListener(e -> {
-                String selectedAction = actionValues[exitActionCombo.getSelectedIndex()];
-                previewAction(selectedAction, "退出" + labelField.getText(), tempColor[0], tempLabelColor[0]);
-            });
-            exitPanel.add(previewExitBtn, BorderLayout.EAST);
-            inputPanel.add(exitPanel);
+            // 使用 JScrollPane 包装，防止内容过长
+            JScrollPane scrollPane = new JScrollPane(mainPanel);
+            scrollPane.setPreferredSize(new Dimension(480, 600));
+            scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+            scrollPane.setBorder(null);
 
-            int result = JOptionPane.showConfirmDialog(this, inputPanel,
+            int result = JOptionPane.showConfirmDialog(this, scrollPane,
                     isNew ? "添加新的高亮时间区域" : "编辑高亮时间区域", JOptionPane.OK_CANCEL_OPTION);
 
             if (result == JOptionPane.OK_OPTION) {
@@ -1235,8 +1216,17 @@ public class AnalogClock extends JFrame {
                 settingToEdit.setHighlightColor(tempColor[0]);
                 settingToEdit.setLabel(label);
                 settingToEdit.setLabelColor(tempLabelColor[0]);
-                settingToEdit.setEnterAction(actionValues[enterActionCombo.getSelectedIndex()]);
-                settingToEdit.setExitAction(actionValues[exitActionCombo.getSelectedIndex()]);
+                
+                // 更新触发器配置
+                settingToEdit.enter.action = enterTriggerPanel.getAction();
+                settingToEdit.enter.text = enterTriggerPanel.getText();
+                
+                settingToEdit.exit.action = exitTriggerPanel.getAction();
+                settingToEdit.exit.text = exitTriggerPanel.getText();
+                
+                settingToEdit.interval.action = intervalTriggerPanel.getAction();
+                settingToEdit.interval.text = intervalTriggerPanel.getText();
+                settingToEdit.interval.intervalMinutes = intervalTriggerPanel.getInterval();
 
                 if (isNew) {
                     listModel.addElement(settingToEdit);
@@ -1245,6 +1235,84 @@ public class AnalogClock extends JFrame {
                 }
 
                 updateClockHighlights();
+            }
+        }
+
+        // 内部类：用于构建触发器设置面板
+        class TriggerPanel extends JPanel {
+            private JComboBox<String> actionCombo;
+            private JTextField textField;
+            private JSpinner intervalSpinner;
+            private String[] actionValues = {"none", "dialog", "fullscreen", "lock"};
+            private String[] actionNames = {"无", "弹窗提醒", "全屏提醒", "自动锁屏"};
+
+            public TriggerPanel(ClockConfig.TriggerConfig config, String typeName, boolean isInterval, Color[] colorRef, Color[] labelColorRef) {
+                setLayout(new GridBagLayout());
+                setBorder(new EmptyBorder(10, 10, 10, 10));
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.fill = GridBagConstraints.HORIZONTAL;
+                gbc.insets = new Insets(5, 5, 5, 5);
+                
+                // 动作选择
+                gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.3;
+                add(new JLabel("触发动作:"), gbc);
+                
+                actionCombo = new JComboBox<>(actionNames);
+                String currentAction = config != null ? config.action : "none";
+                for (int i = 0; i < actionValues.length; i++) {
+                    if (actionValues[i].equals(currentAction)) {
+                        actionCombo.setSelectedIndex(i);
+                        break;
+                    }
+                }
+                gbc.gridx = 1; gbc.weightx = 0.7;
+                add(actionCombo, gbc);
+
+                // 间隔设置 (仅间隔触发)
+                if (isInterval) {
+                    gbc.gridx = 0; gbc.gridy++; gbc.weightx = 0.3;
+                    add(new JLabel("触发间隔 (分钟):"), gbc);
+                    
+                    int currentInterval = config != null ? config.intervalMinutes : 30;
+                    if (currentInterval <= 0) currentInterval = 30;
+                    intervalSpinner = new JSpinner(new SpinnerNumberModel(currentInterval, 1, 1440, 1));
+                    gbc.gridx = 1; gbc.weightx = 0.7;
+                    add(intervalSpinner, gbc);
+                }
+
+                // 自定义文案
+                gbc.gridx = 0; gbc.gridy++; gbc.weightx = 0.3;
+                add(new JLabel("提醒文案:"), gbc);
+                
+                textField = new JTextField(config != null ? config.text : "");
+                textField.setToolTipText("留空则使用默认文案");
+                gbc.gridx = 1; gbc.weightx = 0.7;
+                add(textField, gbc);
+                
+                // 预览按钮
+                gbc.gridx = 1; gbc.gridy++; gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE; gbc.anchor = GridBagConstraints.EAST;
+                JButton previewBtn = new JButton("预览效果");
+                previewBtn.addActionListener(e -> {
+                    String selectedAction = actionValues[actionCombo.getSelectedIndex()];
+                    String text = textField.getText();
+                    if (text.isEmpty()) {
+                        text = "预览: " + typeName + "触发";
+                    }
+                    previewAction(selectedAction, text, colorRef[0], labelColorRef[0]);
+                });
+                add(previewBtn, gbc);
+            }
+
+            public String getAction() {
+                return actionValues[actionCombo.getSelectedIndex()];
+            }
+
+            public String getText() {
+                return textField.getText();
+            }
+
+            public int getInterval() {
+                return intervalSpinner != null ? (int) intervalSpinner.getValue() : 0;
             }
         }
 

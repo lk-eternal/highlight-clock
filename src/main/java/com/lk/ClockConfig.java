@@ -3,6 +3,7 @@ package com.lk;
 import java.awt.Color;
 import java.util.List;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
@@ -51,6 +52,26 @@ public class ClockConfig {
 
     public ClockConfig() {}
 
+    // 触发器配置类
+    public static class TriggerConfig {
+        public String action = "none"; // "none", "dialog", "fullscreen", "lock"
+        public String text; // 自定义文案
+        public int intervalMinutes = 0; // 仅用于间隔触发
+
+        public TriggerConfig() {}
+        
+        public TriggerConfig(String action, String text) {
+            this.action = action;
+            this.text = text;
+        }
+
+        public TriggerConfig(String action, String text, int intervalMinutes) {
+            this.action = action;
+            this.text = text;
+            this.intervalMinutes = intervalMinutes;
+        }
+    }
+
     // 辅助类：用于存储高亮区域的可序列化版本
     public static class SerializableHighlightSetting {
         public int startHour;
@@ -70,14 +91,29 @@ public class ClockConfig {
         @JsonDeserialize(using = ConfigManager.ColorDeserializer.class)
         public Color highlightColor;
 
-        // 进入和退出触发效果: "none", "dialog", "fullscreen", "lock"
-        public String enterAction = "none";
-        public String exitAction = "none";
+        // 触发器配置
+        public TriggerConfig enter = new TriggerConfig();
+        public TriggerConfig exit = new TriggerConfig();
+        public TriggerConfig interval = new TriggerConfig();
 
         public SerializableHighlightSetting() {}
 
+        // 兼容旧配置的 Setter
+        @JsonSetter("enterAction")
+        public void setLegacyEnterAction(String action) {
+            if (this.enter == null) this.enter = new TriggerConfig();
+            this.enter.action = action;
+        }
+
+        @JsonSetter("exitAction")
+        public void setLegacyExitAction(String action) {
+            if (this.exit == null) this.exit = new TriggerConfig();
+            this.exit.action = action;
+        }
+
         // 构造函数
-        public SerializableHighlightSetting(int startH, int startM, int endH, int endM, Color color, String label, Color labelColor, String enterAction, String exitAction) {
+        public SerializableHighlightSetting(int startH, int startM, int endH, int endM, Color color, String label, Color labelColor, 
+                                          TriggerConfig enter, TriggerConfig exit, TriggerConfig interval) {
             this.startHour = startH;
             this.startMinute = startM;
             this.endHour = endH;
@@ -85,8 +121,9 @@ public class ClockConfig {
             this.highlightColor = color;
             this.label = label;
             this.labelColor = labelColor;
-            this.enterAction = enterAction != null ? enterAction : "none";
-            this.exitAction = exitAction != null ? exitAction : "none";
+            this.enter = enter != null ? enter : new TriggerConfig();
+            this.exit = exit != null ? exit : new TriggerConfig();
+            this.interval = interval != null ? interval : new TriggerConfig();
         }
     }
 }
