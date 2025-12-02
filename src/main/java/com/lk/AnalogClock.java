@@ -7,8 +7,6 @@ import java.awt.event.*;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.function.Consumer;
 
 public class AnalogClock extends JFrame {
@@ -16,7 +14,7 @@ public class AnalogClock extends JFrame {
     private ClockPanel clockPanel;
     private int xOffset, yOffset;
     private TimeRangeMonitor timeRangeMonitor;
-    private MenuItem trayToggleItem; // 托盘菜单的显示/隐藏项
+    private TrayIcon trayIcon; // 托盘图标
 
     public AnalogClock() {
         ClockConfig config = ConfigManager.loadConfig();
@@ -48,16 +46,21 @@ public class AnalogClock extends JFrame {
         // 初始化时间范围监控器
         timeRangeMonitor = new TimeRangeMonitor(clockPanel.getHighlightAreas());
 
-        // 动态更新时钟
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                clockPanel.repaint();
-                // 每秒检查是否需要触发进入/退出动作
-                timeRangeMonitor.checkAndTrigger();
+        // 动态更新时钟 - 使用独立的后台守护线程，避免被 AWT 托盘菜单阻塞
+        Thread clockUpdateThread = new Thread(() -> {
+            while (true) {
+                try {
+                    clockPanel.repaint();
+                    // 每秒检查是否需要触发进入/退出动作
+                    timeRangeMonitor.checkAndTrigger();
+                    Thread.sleep(1000);
+                } catch (InterruptedException ex) {
+                    break;
+                }
             }
-        }, 0, 1000);
+        });
+        clockUpdateThread.setDaemon(true);
+        clockUpdateThread.start();
 
         addMouseWheelListener(new MouseAdapter() {
             @Override
@@ -148,19 +151,19 @@ public class AnalogClock extends JFrame {
         // 注意：在实际应用中，你可能需要加载一个自定义的图标文件
         Image image = Toolkit.getDefaultToolkit().getImage(getClass().getResource("/tray.png"));
 
-        // 创建托盘菜单
-        PopupMenu trayPopupMenu = new PopupMenu();
+        // 使用 JPopupMenu 替代 AWT PopupMenu，避免阻塞事件线程
+        JPopupMenu trayPopupMenu = new JPopupMenu();
 
         // 显示/隐藏时钟
-        trayToggleItem = new MenuItem("Hide Clock");
-        trayToggleItem.addActionListener(e -> {
+        JMenuItem swingToggleItem = new JMenuItem("Hide Clock");
+        swingToggleItem.addActionListener(e -> {
             setVisible(!isVisible());
-            trayToggleItem.setLabel(isVisible() ? "Hide Clock" : "Show Clock");
+            swingToggleItem.setText(isVisible() ? "Hide Clock" : "Show Clock");
         });
-        trayPopupMenu.add(trayToggleItem);
+        trayPopupMenu.add(swingToggleItem);
 
         // 设置 (打开设置对话框)
-        MenuItem settingsItem = new MenuItem("Settings");
+        JMenuItem settingsItem = new JMenuItem("Settings");
         settingsItem.addActionListener(e -> {
             SettingsDialog dialog = new SettingsDialog(this, clockPanel);
             dialog.setVisible(true);
@@ -169,29 +172,59 @@ public class AnalogClock extends JFrame {
 
         trayPopupMenu.addSeparator();
 
-
-        TrayIcon trayIcon = new TrayIcon(image, "LK Clock", trayPopupMenu);
-        trayIcon.setImageAutoSize(true);
-
-        // 左键双击事件：显示/隐藏窗口
-        trayIcon.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2) {
-                    setVisible(!isVisible());
-                    trayToggleItem.setLabel(isVisible() ? "Hide Clock" : "Show Clock");
-                }
-            }
-        });
-
         // 退出
-        MenuItem exitItem = new MenuItem("Exit");
+        JMenuItem exitItem = new JMenuItem("Exit");
         exitItem.addActionListener(e -> {
             saveCurrentConfig();
-            tray.remove(trayIcon); // 退出前移除托盘图标
+            tray.remove(trayIcon);
             System.exit(0);
         });
         trayPopupMenu.add(exitItem);
+
+        // 创建 TrayIcon，不使用 AWT PopupMenu
+        trayIcon = new TrayIcon(image, "LK Clock");
+        trayIcon.setImageAutoSize(true);
+
+        // 使用鼠标监听器手动显示 JPopupMenu
+        trayIcon.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // 左键双击：显示/隐藏窗口
+                if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2) {
+                    setVisible(!isVisible());
+                    swingToggleItem.setText(isVisible() ? "Hide Clock" : "Show Clock");
+                }
+            }
+            
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                // 右键：显示菜单
+                if (e.isPopupTrigger() || e.getButton() == MouseEvent.BUTTON3) {
+                    // 更新菜单项文本
+                    swingToggleItem.setText(isVisible() ? "Hide Clock" : "Show Clock");
+                    // 创建一个临时的不可见窗口来显示菜单
+                    JDialog tempDialog = new JDialog();
+                    tempDialog.setUndecorated(true);
+                    tempDialog.setSize(1, 1);
+                    tempDialog.setLocation(e.getXOnScreen(), e.getYOnScreen());
+                    tempDialog.setVisible(true);
+                    trayPopupMenu.show(tempDialog, 0, 0);
+                    // 菜单关闭时隐藏临时窗口
+                    trayPopupMenu.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
+                        @Override
+                        public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent evt) {}
+                        @Override
+                        public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent evt) {
+                            tempDialog.dispose();
+                        }
+                        @Override
+                        public void popupMenuCanceled(javax.swing.event.PopupMenuEvent evt) {
+                            tempDialog.dispose();
+                        }
+                    });
+                }
+            }
+        });
 
         try {
             tray.add(trayIcon);
@@ -319,18 +352,33 @@ public class AnalogClock extends JFrame {
                         parent.yOffset = e.getY();
                     }
                 }
+                
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    // 鼠标离开面板时清除悬停状态
+                    if (hoveredSetting != null) {
+                        hoveredSetting = null;
+                        setCursor(Cursor.getDefaultCursor());
+                        paintImmediately(0, 0, getWidth(), getHeight());
+                    }
+                }
 
                 @Override
                 public void mouseClicked(MouseEvent e) {
-                    // 1. 双击 (左键) 逻辑
-                    if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2) {
+                    // 单击左键高亮区域 -> 编辑
+                    if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1) {
                         HighlightSetting clickedSetting = getHighlightSettingAt(e.getX(), e.getY());
-                        SettingsDialog dialog =
-                                new SettingsDialog((JFrame) SwingUtilities.getWindowAncestor(ClockPanel.this),
-                                        ClockPanel.this, true);
-                        if (clickedSetting != null) {
-                            boolean isNew = !highlightAreas.contains(clickedSetting);
-                            dialog.openHighlightEdit(clickedSetting, isNew);
+                        // 只有点击已存在的高亮区域才打开编辑
+                        if (clickedSetting != null && highlightAreas.contains(clickedSetting)) {
+                            // 清除悬停状态
+                            hoveredSetting = null;
+                            setCursor(Cursor.getDefaultCursor());
+                            repaint();
+                            
+                            SettingsDialog dialog =
+                                    new SettingsDialog((JFrame) SwingUtilities.getWindowAncestor(ClockPanel.this),
+                                            ClockPanel.this, true);
+                            dialog.openHighlightEdit(clickedSetting, false);
                         }
                     }
                 }
@@ -395,10 +443,6 @@ public class AnalogClock extends JFrame {
                         hideItem.addActionListener(action -> {
                             AnalogClock parent = (AnalogClock) SwingUtilities.getWindowAncestor(ClockPanel.this);
                             parent.setVisible(false);
-                            // 同步更新托盘菜单项的文本
-                            if (parent.trayToggleItem != null) {
-                                parent.trayToggleItem.setLabel("Show Clock");
-                            }
                         });
                         popup.add(hideItem);
 
@@ -438,7 +482,12 @@ public class AnalogClock extends JFrame {
                     
                     if (newHovered != hoveredSetting) {
                         hoveredSetting = newHovered;
-                        repaint(); // 触发重绘以显示悬停效果
+                        // 设置鼠标指针：高亮区域上显示手掌，否则默认
+                        setCursor(hoveredSetting != null 
+                            ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) 
+                            : Cursor.getDefaultCursor());
+                        // 使用 paintImmediately 立即重绘，避免延迟
+                        paintImmediately(0, 0, getWidth(), getHeight());
                     }
                 }
             });
