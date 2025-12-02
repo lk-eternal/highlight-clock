@@ -109,7 +109,7 @@ public class TimeRangeMonitor {
         
         switch (config.action) {
             case "dialog":
-                showDialogNotification(message);
+                showDialogNotification(message, setting.getHighlightColor(), setting.getLabelColor());
                 break;
             case "fullscreen":
                 showFullscreenNotification(message, setting.getHighlightColor(), setting.getLabelColor());
@@ -120,26 +120,31 @@ public class TimeRangeMonitor {
         }
     }
     
-    private void showDialogNotification(String message) {
+    private void showDialogNotification(String message, Color bgColor, Color textColor) {
         SwingUtilities.invokeLater(() -> {
+            // 使用 JDialog 并设置模态排除，使其不受其他模态对话框的阻塞
             JDialog dialog = new JDialog((Frame)null, "时间提醒", false);
             dialog.setUndecorated(true);
             dialog.setAlwaysOnTop(true);
+            // 关键：设置模态排除类型，使窗口不受任何模态对话框的阻塞
+            dialog.setModalExclusionType(Dialog.ModalExclusionType.APPLICATION_EXCLUDE);
             
-            JPanel panel = new JPanel(new BorderLayout(10, 10));
+            JPanel panel = new JPanel(new BorderLayout(30, 30));
             panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(100, 100, 100), 2),
-                BorderFactory.createEmptyBorder(20, 30, 20, 30)
+                BorderFactory.createLineBorder(bgColor.darker(), 4),
+                BorderFactory.createEmptyBorder(90, 150, 90, 150)
             ));
-            panel.setBackground(new Color(245, 245, 245));
+            panel.setBackground(bgColor);
             
             JLabel label = new JLabel(message);
-            label.setFont(new Font("Microsoft YaHei", Font.BOLD, 18));
+            label.setFont(new Font("Microsoft YaHei", Font.BOLD, 48));
+            label.setForeground(textColor);
             label.setHorizontalAlignment(SwingConstants.CENTER);
             panel.add(label, BorderLayout.CENTER);
             
             JButton okButton = new JButton("确定");
-            okButton.setFont(new Font("Microsoft YaHei", Font.PLAIN, 14));
+            okButton.setFont(new Font("Microsoft YaHei", Font.PLAIN, 24));
+            okButton.setPreferredSize(new Dimension(140, 50));
             okButton.addActionListener(e -> dialog.dispose());
             
             JPanel buttonPanel = new JPanel();
@@ -152,21 +157,24 @@ public class TimeRangeMonitor {
             dialog.setLocationRelativeTo(null);
             dialog.setVisible(true);
             
-            // 5秒后自动关闭
-            Timer timer = new Timer(5000, e -> dialog.dispose());
-            timer.setRepeats(false);
-            timer.start();
+            // 确保窗口显示在最前面并获取焦点
+            dialog.toFront();
+            okButton.requestFocusInWindow();
         });
     }
     
     private void showFullscreenNotification(String message, Color bgColor, Color textColor) {
         SwingUtilities.invokeLater(() -> {
-            JWindow window = new JWindow();
-            window.setAlwaysOnTop(true);
+            // 使用 JDialog 并设置模态排除，使其不受其他模态对话框的阻塞
+            JDialog dialog = new JDialog((Frame)null, "全屏提醒", false);
+            dialog.setUndecorated(true);
+            dialog.setAlwaysOnTop(true);
+            // 关键：设置模态排除类型，使窗口不受任何模态对话框的阻塞
+            dialog.setModalExclusionType(Dialog.ModalExclusionType.APPLICATION_EXCLUDE);
             
             // 获取屏幕尺寸
             Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-            window.setBounds(0, 0, screenSize.width, screenSize.height);
+            dialog.setBounds(0, 0, screenSize.width, screenSize.height);
             
             JPanel panel = new JPanel(new GridBagLayout());
             panel.setBackground(bgColor);
@@ -183,12 +191,15 @@ public class TimeRangeMonitor {
             panel.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
-                    window.dispose();
+                    dialog.dispose();
                 }
             });
             
-            window.add(panel);
-            window.setVisible(true);
+            dialog.add(panel);
+            dialog.setVisible(true);
+            
+            // 确保窗口显示在最前面
+            dialog.toFront();
         });
     }
     
@@ -231,8 +242,8 @@ public class TimeRangeMonitor {
     }
 
     // 预览方法（供外部调用）
-    public void previewDialogNotification(String message) {
-        showDialogNotification(message);
+    public void previewDialogNotification(String message, Color bgColor, Color textColor) {
+        showDialogNotification(message, bgColor, textColor);
     }
 
     public void previewFullscreenNotification(String message, Color bgColor, Color textColor) {

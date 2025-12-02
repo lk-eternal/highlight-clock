@@ -16,6 +16,7 @@ public class AnalogClock extends JFrame {
     private ClockPanel clockPanel;
     private int xOffset, yOffset;
     private TimeRangeMonitor timeRangeMonitor;
+    private MenuItem trayToggleItem; // 托盘菜单的显示/隐藏项
 
     public AnalogClock() {
         ClockConfig config = ConfigManager.loadConfig();
@@ -150,7 +151,15 @@ public class AnalogClock extends JFrame {
         // 创建托盘菜单
         PopupMenu trayPopupMenu = new PopupMenu();
 
-        // 2. 设置 (打开设置对话框)
+        // 显示/隐藏时钟
+        trayToggleItem = new MenuItem("Hide Clock");
+        trayToggleItem.addActionListener(e -> {
+            setVisible(!isVisible());
+            trayToggleItem.setLabel(isVisible() ? "Hide Clock" : "Show Clock");
+        });
+        trayPopupMenu.add(trayToggleItem);
+
+        // 设置 (打开设置对话框)
         MenuItem settingsItem = new MenuItem("Settings");
         settingsItem.addActionListener(e -> {
             SettingsDialog dialog = new SettingsDialog(this, clockPanel);
@@ -164,17 +173,18 @@ public class AnalogClock extends JFrame {
         TrayIcon trayIcon = new TrayIcon(image, "LK Clock", trayPopupMenu);
         trayIcon.setImageAutoSize(true);
 
-        // 【新增】左键双击事件：显示/隐藏窗口
+        // 左键双击事件：显示/隐藏窗口
         trayIcon.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2) {
                     setVisible(!isVisible());
+                    trayToggleItem.setLabel(isVisible() ? "Hide Clock" : "Show Clock");
                 }
             }
         });
 
-        // 3. 退出
+        // 退出
         MenuItem exitItem = new MenuItem("Exit");
         exitItem.addActionListener(e -> {
             saveCurrentConfig();
@@ -380,6 +390,17 @@ public class AnalogClock extends JFrame {
                             dialog.setVisible(true);
                         });
                         popup.add(settings);
+
+                        JMenuItem hideItem = new JMenuItem("隐藏时钟");
+                        hideItem.addActionListener(action -> {
+                            AnalogClock parent = (AnalogClock) SwingUtilities.getWindowAncestor(ClockPanel.this);
+                            parent.setVisible(false);
+                            // 同步更新托盘菜单项的文本
+                            if (parent.trayToggleItem != null) {
+                                parent.trayToggleItem.setLabel("Show Clock");
+                            }
+                        });
+                        popup.add(hideItem);
 
                         JMenuItem exitItem = new JMenuItem("退出");
                         exitItem.addActionListener(igonre -> {
@@ -1529,7 +1550,7 @@ public class AnalogClock extends JFrame {
             TimeRangeMonitor tempMonitor = new TimeRangeMonitor(new ArrayList<>());
             switch (action) {
                 case "dialog":
-                    tempMonitor.previewDialogNotification(message);
+                    tempMonitor.previewDialogNotification(message, bgColor, textColor);
                     break;
                 case "fullscreen":
                     tempMonitor.previewFullscreenNotification(message, bgColor, textColor);
