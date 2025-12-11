@@ -14,10 +14,24 @@ import java.io.File;
 import java.io.IOException;
 
 public class ConfigManager {
+    private static final String CONFIG_DIR_NAME = ".lkclock";
     private static final String CONFIG_FILE_NAME = "clock_config.json";
-    private static final File CONFIG_FILE = new File(CONFIG_FILE_NAME);
+    private static final File CONFIG_DIR;
+    private static final File CONFIG_FILE;
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
+    
+    static {
+        // 配置文件存储在用户目录下的 .lkclock 文件夹
+        String userHome = System.getProperty("user.home");
+        CONFIG_DIR = new File(userHome, CONFIG_DIR_NAME);
+        CONFIG_FILE = new File(CONFIG_DIR, CONFIG_FILE_NAME);
+        
+        // 确保配置目录存在
+        if (!CONFIG_DIR.exists()) {
+            CONFIG_DIR.mkdirs();
+        }
+    }
 
     // --- 自定义 Color 序列化器和反序列化器 ---
 

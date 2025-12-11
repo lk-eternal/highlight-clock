@@ -15,12 +15,14 @@ public class AnalogClock extends JFrame {
     private int xOffset, yOffset;
     private TimeRangeMonitor timeRangeMonitor;
     private TrayIcon trayIcon; // 托盘图标
+    private GlobalHotkeyManager hotkeyManager; // 全局快捷键管理器
 
     public AnalogClock() {
         ClockConfig config = ConfigManager.loadConfig();
         setTitle("LK Clock");
         setUndecorated(true);
-        setAlwaysOnTop(true);
+        setAlwaysOnTop(config.alwaysOnTop);
+        setOpacity(Math.max(0.1f, Math.min(1.0f, config.opacity))); // 限制最小透明度
         setBackground(new Color(0, 0, 0, 0));
         setType(Window.Type.UTILITY);
 
@@ -45,15 +47,25 @@ public class AnalogClock extends JFrame {
 
         // 初始化时间范围监控器
         timeRangeMonitor = new TimeRangeMonitor(clockPanel.getHighlightAreas());
+        
+        // 初始化全局快捷键 (Alt+C 显示/隐藏, Alt+T 切换置顶)
+        hotkeyManager = new GlobalHotkeyManager(this);
+        hotkeyManager.start();
 
         // 动态更新时钟 - 使用独立的后台守护线程，避免被 AWT 托盘菜单阻塞
         Thread clockUpdateThread = new Thread(() -> {
+            long lastTriggerCheck = 0;
             while (true) {
                 try {
                     clockPanel.repaint();
                     // 每秒检查是否需要触发进入/退出动作
-                    timeRangeMonitor.checkAndTrigger();
-                    Thread.sleep(1000);
+                    long now = System.currentTimeMillis();
+                    if (now - lastTriggerCheck >= 1000) {
+                        timeRangeMonitor.checkAndTrigger();
+                        lastTriggerCheck = now;
+                    }
+                    // 约60fps刷新，实现平滑秒针
+                    Thread.sleep(16);
                 } catch (InterruptedException ex) {
                     break;
                 }
@@ -154,26 +166,33 @@ public class AnalogClock extends JFrame {
         // 使用 JPopupMenu 替代 AWT PopupMenu，避免阻塞事件线程
         JPopupMenu trayPopupMenu = new JPopupMenu();
 
+        // 置顶切换
+        JMenuItem alwaysOnTopItem = new JMenuItem(isAlwaysOnTop() ? "取消置顶" : "窗口置顶");
+        alwaysOnTopItem.addActionListener(e -> {
+            setAlwaysOnTop(!isAlwaysOnTop());
+            alwaysOnTopItem.setText(isAlwaysOnTop() ? "取消置顶" : "窗口置顶");
+            saveCurrentConfig();
+        });
+        trayPopupMenu.add(alwaysOnTopItem);
+
         // 显示/隐藏时钟
-        JMenuItem swingToggleItem = new JMenuItem("Hide Clock");
+        JMenuItem swingToggleItem = new JMenuItem(isVisible() ? "隐藏时钟" : "显示时钟");
         swingToggleItem.addActionListener(e -> {
             setVisible(!isVisible());
-            swingToggleItem.setText(isVisible() ? "Hide Clock" : "Show Clock");
+            swingToggleItem.setText(isVisible() ? "隐藏时钟" : "显示时钟");
         });
         trayPopupMenu.add(swingToggleItem);
 
-        // 设置 (打开设置对话框)
-        JMenuItem settingsItem = new JMenuItem("Settings");
+        // 设置
+        JMenuItem settingsItem = new JMenuItem("设置");
         settingsItem.addActionListener(e -> {
             SettingsDialog dialog = new SettingsDialog(this, clockPanel);
             dialog.setVisible(true);
         });
         trayPopupMenu.add(settingsItem);
 
-        trayPopupMenu.addSeparator();
-
         // 退出
-        JMenuItem exitItem = new JMenuItem("Exit");
+        JMenuItem exitItem = new JMenuItem("退出");
         exitItem.addActionListener(e -> {
             saveCurrentConfig();
             tray.remove(trayIcon);
@@ -192,7 +211,7 @@ public class AnalogClock extends JFrame {
                 // 左键双击：显示/隐藏窗口
                 if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2) {
                     setVisible(!isVisible());
-                    swingToggleItem.setText(isVisible() ? "Hide Clock" : "Show Clock");
+                    swingToggleItem.setText(isVisible() ? "隐藏时钟" : "显示时钟");
                 }
             }
             
@@ -201,7 +220,8 @@ public class AnalogClock extends JFrame {
                 // 右键：显示菜单
                 if (e.isPopupTrigger() || e.getButton() == MouseEvent.BUTTON3) {
                     // 更新菜单项文本
-                    swingToggleItem.setText(isVisible() ? "Hide Clock" : "Show Clock");
+                    swingToggleItem.setText(isVisible() ? "隐藏时钟" : "显示时钟");
+                    alwaysOnTopItem.setText(isAlwaysOnTop() ? "取消置顶" : "窗口置顶");
                     // 创建一个临时的不可见窗口来显示菜单
                     JDialog tempDialog = new JDialog();
                     tempDialog.setUndecorated(true);
@@ -234,14 +254,25 @@ public class AnalogClock extends JFrame {
             return false;
         }
     }
+    
+    /**
+     * 在时钟面板上显示 Toast 提示
+     */
+    public void showToast(String message) {
+        if (clockPanel != null) {
+            clockPanel.showToast(message);
+        }
+    }
 
     private void saveCurrentConfig() {
         ClockConfig config = new ClockConfig();
 
-        // 1. 窗口位置和大小 (保持不变)
+        // 1. 窗口位置和大小
         config.scale = clockPanel.getScale();
         config.windowX = getX();
         config.windowY = getY();
+        config.alwaysOnTop = isAlwaysOnTop();
+        config.opacity = getOpacity();
 
         // 2. 颜色属性 (直接复制 Color 对象，Jackson 会自动处理序列化)
         config.clockColor = clockPanel.getClockColor();
@@ -304,6 +335,11 @@ public class AnalogClock extends JFrame {
 
         // 鼠标悬停的高亮区域
         private HighlightSetting hoveredSetting = null;
+        
+        // Toast 提示相关
+        private String toastMessage = null;
+        private long toastEndTime = 0;
+        private static final int TOAST_DURATION = 1500; // Toast 显示时间 (ms)
 
         public ClockPanel(ClockConfig config) {
             // 1. 应用颜色和缩放 (直接使用配置中的 Color 对象)
@@ -430,6 +466,22 @@ public class AnalogClock extends JFrame {
                         }
                         popup.addSeparator();
 
+                        // 置顶切换
+                        AnalogClock parentClock = (AnalogClock) SwingUtilities.getWindowAncestor(ClockPanel.this);
+                        JMenuItem alwaysOnTopItem = new JMenuItem(parentClock.isAlwaysOnTop() ? "取消置顶" : "窗口置顶");
+                        alwaysOnTopItem.addActionListener(action -> {
+                            parentClock.setAlwaysOnTop(!parentClock.isAlwaysOnTop());
+                            saveCurrentConfig();
+                        });
+                        popup.add(alwaysOnTopItem);
+
+                        JMenuItem hideItem = new JMenuItem("隐藏时钟");
+                        hideItem.addActionListener(action -> {
+                            AnalogClock parent = (AnalogClock) SwingUtilities.getWindowAncestor(ClockPanel.this);
+                            parent.setVisible(false);
+                        });
+                        popup.add(hideItem);
+
                         JMenuItem settings = new JMenuItem("设置");
                         settings.addActionListener(action -> {
                             SettingsDialog dialog =
@@ -438,13 +490,6 @@ public class AnalogClock extends JFrame {
                             dialog.setVisible(true);
                         });
                         popup.add(settings);
-
-                        JMenuItem hideItem = new JMenuItem("隐藏时钟");
-                        hideItem.addActionListener(action -> {
-                            AnalogClock parent = (AnalogClock) SwingUtilities.getWindowAncestor(ClockPanel.this);
-                            parent.setVisible(false);
-                        });
-                        popup.add(hideItem);
 
                         JMenuItem exitItem = new JMenuItem("退出");
                         exitItem.addActionListener(igonre -> {
@@ -530,6 +575,15 @@ public class AnalogClock extends JFrame {
 
         public boolean isShowLabels() { return showLabels; }
         public void setShowLabels(boolean showLabels) { this.showLabels = showLabels; repaint(); }
+        
+        /**
+         * 显示 Toast 提示
+         */
+        public void showToast(String message) {
+            this.toastMessage = message;
+            this.toastEndTime = System.currentTimeMillis() + TOAST_DURATION;
+            repaint();
+        }
 
         // ClockPanel.java 内部类 ClockPanel 的部分
 
@@ -654,6 +708,9 @@ public class AnalogClock extends JFrame {
             int hour = now.getHour() % 12;
             int minute = now.getMinute();
             int second = now.getSecond();
+            int nano = now.getNano();
+            // 计算精确的秒数（包含毫秒部分），用于平滑秒针
+            double preciseSecond = second + nano / 1_000_000_000.0;
             
             // 计算当前时间（24小时制，用于判断是否在高亮区域内）
             int currentHour24 = now.getHour();
@@ -685,9 +742,10 @@ public class AnalogClock extends JFrame {
             // 6. 绘制指针（带阴影）
             drawHandWithShadow(g2d, Math.toRadians(hour * 30 + minute * 0.5 - 90), 
                               (int)(45 * scale), (int)(5 * scale), hourHandColor, centerX, centerY);
-            drawHandWithShadow(g2d, Math.toRadians(minute * 6 + second * 0.1 - 90), 
+            drawHandWithShadow(g2d, Math.toRadians(minute * 6 + preciseSecond * 0.1 - 90), 
                               (int)(65 * scale), (int)(3 * scale), minuteHandColor, centerX, centerY);
-            drawHandWithShadow(g2d, Math.toRadians(second * 6 - 90), 
+            // 使用精确秒数实现平滑秒针
+            drawHandWithShadow(g2d, Math.toRadians(preciseSecond * 6 - 90), 
                               (int)(75 * scale), (int)(1.5f * scale), secondHandColor, centerX, centerY);
 
             // 7. 绘制中心点（带高光）
@@ -702,6 +760,35 @@ public class AnalogClock extends JFrame {
             int highlightSize = (int)(4 * scale);
             g2d.setColor(new Color(255, 255, 255, 200));
             g2d.fillOval(centerX - highlightSize / 2 - 1, centerY - highlightSize / 2 - 1, highlightSize, highlightSize);
+            
+            // 8. 绘制 Toast 提示
+            if (toastMessage != null && System.currentTimeMillis() < toastEndTime) {
+                // 计算透明度（淡出效果）
+                long remaining = toastEndTime - System.currentTimeMillis();
+                int alpha = remaining < 300 ? (int)(255 * remaining / 300) : 255;
+                
+                Font toastFont = new Font("Microsoft YaHei", Font.BOLD, (int)(12 * scale));
+                g2d.setFont(toastFont);
+                FontMetrics fm = g2d.getFontMetrics();
+                int textWidth = fm.stringWidth(toastMessage);
+                int textHeight = fm.getHeight();
+                
+                int padding = (int)(8 * scale);
+                int boxWidth = textWidth + padding * 2;
+                int boxHeight = textHeight + padding;
+                int boxX = centerX - boxWidth / 2;
+                int boxY = centerY + (int)(30 * scale);
+                
+                // 绘制背景
+                g2d.setColor(new Color(0, 0, 0, (int)(200 * alpha / 255)));
+                g2d.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 10, 10);
+                
+                // 绘制文字
+                g2d.setColor(new Color(255, 255, 255, alpha));
+                g2d.drawString(toastMessage, boxX + padding, boxY + fm.getAscent() + padding / 2);
+            } else if (toastMessage != null && System.currentTimeMillis() >= toastEndTime) {
+                toastMessage = null; // 清除过期的 Toast
+            }
         }
 
         /**
@@ -1197,12 +1284,70 @@ public class AnalogClock extends JFrame {
             }
         }
 
+        // 预设主题定义
+        private static final String[] THEME_NAMES = {"自定义", "深色经典", "浅色简约", "护眼绿", "暗夜蓝", "暖橙色"};
+        private static final Color[][] THEMES = {
+            null, // 自定义 - 不改变颜色
+            // 深色经典: 表盘背景, 数字, 时针, 分针, 秒针, 默认高亮
+            {new Color(50, 50, 50), Color.WHITE, Color.WHITE, Color.LIGHT_GRAY, Color.RED, new Color(0xDD, 0x77, 0x0, 80)},
+            // 浅色简约
+            {new Color(240, 240, 235), new Color(60, 60, 60), new Color(40, 40, 40), new Color(80, 80, 80), new Color(200, 50, 50), new Color(100, 150, 200, 100)},
+            // 护眼绿
+            {new Color(40, 55, 45), new Color(200, 230, 200), new Color(180, 210, 180), new Color(150, 180, 150), new Color(100, 200, 100), new Color(80, 150, 80, 100)},
+            // 暗夜蓝
+            {new Color(25, 35, 55), new Color(180, 200, 230), new Color(150, 180, 220), new Color(120, 150, 190), new Color(100, 180, 255), new Color(70, 130, 200, 100)},
+            // 暖橙色
+            {new Color(55, 40, 35), new Color(255, 220, 180), new Color(255, 200, 150), new Color(220, 180, 140), new Color(255, 140, 60), new Color(255, 150, 80, 100)}
+        };
+
         /**
          * 创建样式和颜色设置面板 (更新默认高亮颜色设置)
          */
         private JPanel createStylePanel() {
-            JPanel panel = new JPanel(new GridLayout(8, 1, 10, 10)); // 8行
+            JPanel panel = new JPanel(new GridLayout(11, 1, 10, 10)); // 11行
             panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            // 预设主题选择
+            JPanel themePanel = new JPanel(new BorderLayout(10, 5));
+            themePanel.add(new JLabel("预设主题:"), BorderLayout.WEST);
+            JComboBox<String> themeCombo = new JComboBox<>(THEME_NAMES);
+            themeCombo.addActionListener(e -> {
+                int idx = themeCombo.getSelectedIndex();
+                if (idx > 0 && THEMES[idx] != null) {
+                    Color[] theme = THEMES[idx];
+                    clockPanel.setClockColor(theme[0]);
+                    clockPanel.setNumberColor(theme[1]);
+                    clockPanel.setHourHandColor(theme[2]);
+                    clockPanel.setMinuteHandColor(theme[3]);
+                    clockPanel.setSecondHandColor(theme[4]);
+                    clockPanel.setDefaultHighlightColor(theme[5]);
+                    // 更新所有高亮区域的标签颜色，使用数字颜色以确保可读性
+                    for (HighlightSetting setting : clockPanel.getHighlightAreas()) {
+                        setting.setLabelColor(theme[1]);
+                    }
+                    clockPanel.repaint();
+                }
+            });
+            themePanel.add(themeCombo, BorderLayout.CENTER);
+            panel.add(themePanel);
+
+            // 开机自启动设置
+            JPanel startupPanel = new JPanel(new BorderLayout(10, 5));
+            startupPanel.add(new JLabel("开机自启动:"), BorderLayout.WEST);
+            JCheckBox startupCheckBox = new JCheckBox();
+            startupCheckBox.setSelected(StartupManager.isStartupEnabled());
+            startupCheckBox.addActionListener(e -> {
+                if (startupCheckBox.isSelected()) {
+                    if (!StartupManager.enableStartup()) {
+                        JOptionPane.showMessageDialog(this, "无法设置开机自启动", "错误", JOptionPane.ERROR_MESSAGE);
+                        startupCheckBox.setSelected(false);
+                    }
+                } else {
+                    StartupManager.disableStartup();
+                }
+            });
+            startupPanel.add(startupCheckBox, BorderLayout.EAST);
+            panel.add(startupPanel);
 
             // 添加全局标签显示设置
             JPanel labelSettingPanel = new JPanel(new BorderLayout(10, 5));
@@ -1214,6 +1359,23 @@ public class AnalogClock extends JFrame {
             });
             labelSettingPanel.add(showLabelsCheckBox, BorderLayout.EAST);
             panel.add(labelSettingPanel);
+
+            // 透明度设置
+            JPanel opacityPanel = new JPanel(new BorderLayout(10, 5));
+            AnalogClock parentFrame = (AnalogClock) getOwner();
+            JLabel opacityLabel = new JLabel("窗口透明度: " + (int)(parentFrame.getOpacity() * 100) + "%");
+            opacityPanel.add(opacityLabel, BorderLayout.WEST);
+            JSlider opacitySlider = new JSlider(10, 100, (int)(parentFrame.getOpacity() * 100));
+            opacitySlider.setMajorTickSpacing(30);
+            opacitySlider.setMinorTickSpacing(10);
+            opacitySlider.setPaintTicks(true);
+            opacitySlider.addChangeListener(ev -> {
+                float opacity = opacitySlider.getValue() / 100.0f;
+                parentFrame.setOpacity(opacity);
+                opacityLabel.setText("窗口透明度: " + opacitySlider.getValue() + "%");
+            });
+            opacityPanel.add(opacitySlider, BorderLayout.CENTER);
+            panel.add(opacityPanel);
 
             // 使用辅助方法创建颜色行 (ColorSetter 接口已改为 Consumer<Color>)
             Consumer<Color> defaultHighlightSetter = c -> clockPanel.setDefaultHighlightColor(c);
@@ -1455,13 +1617,16 @@ public class AnalogClock extends JFrame {
                 // 更新触发器配置
                 settingToEdit.enter.action = enterTriggerPanel.getAction();
                 settingToEdit.enter.text = enterTriggerPanel.getText();
+                settingToEdit.enter.playSound = enterTriggerPanel.getPlaySound();
                 
                 settingToEdit.exit.action = exitTriggerPanel.getAction();
                 settingToEdit.exit.text = exitTriggerPanel.getText();
+                settingToEdit.exit.playSound = exitTriggerPanel.getPlaySound();
                 
                 settingToEdit.interval.action = intervalTriggerPanel.getAction();
                 settingToEdit.interval.text = intervalTriggerPanel.getText();
                 settingToEdit.interval.intervalMinutes = intervalTriggerPanel.getInterval();
+                settingToEdit.interval.playSound = intervalTriggerPanel.getPlaySound();
 
                 if (isNew) {
                     listModel.addElement(settingToEdit);
@@ -1478,6 +1643,7 @@ public class AnalogClock extends JFrame {
             private JComboBox<String> actionCombo;
             private JTextField textField;
             private JSpinner intervalSpinner;
+            private JCheckBox soundCheckBox;
             private String[] actionValues = {"none", "dialog", "fullscreen", "lock"};
             private String[] actionNames = {"无", "弹窗提醒", "全屏提醒", "自动锁屏"};
 
@@ -1524,6 +1690,15 @@ public class AnalogClock extends JFrame {
                 gbc.gridx = 1; gbc.weightx = 0.7;
                 add(textField, gbc);
                 
+                // 声音提醒开关
+                gbc.gridx = 0; gbc.gridy++; gbc.weightx = 0.3;
+                add(new JLabel("声音提醒:"), gbc);
+                
+                soundCheckBox = new JCheckBox("启用提示音");
+                soundCheckBox.setSelected(config != null && config.playSound);
+                gbc.gridx = 1; gbc.weightx = 0.7;
+                add(soundCheckBox, gbc);
+                
                 // 预览按钮
                 gbc.gridx = 1; gbc.gridy++; gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE; gbc.anchor = GridBagConstraints.EAST;
                 JButton previewBtn = new JButton("预览效果");
@@ -1533,7 +1708,7 @@ public class AnalogClock extends JFrame {
                     if (text.isEmpty()) {
                         text = "预览: " + typeName + "触发";
                     }
-                    previewAction(selectedAction, text, colorRef[0], labelColorRef[0]);
+                    previewAction(selectedAction, text, colorRef[0], labelColorRef[0], soundCheckBox.isSelected());
                 });
                 add(previewBtn, gbc);
             }
@@ -1548,6 +1723,10 @@ public class AnalogClock extends JFrame {
 
             public int getInterval() {
                 return intervalSpinner != null ? (int) intervalSpinner.getValue() : 0;
+            }
+            
+            public boolean getPlaySound() {
+                return soundCheckBox.isSelected();
             }
         }
 
@@ -1590,13 +1769,21 @@ public class AnalogClock extends JFrame {
         }
 
         // 预览触发效果
-        private void previewAction(String action, String message, Color bgColor, Color textColor) {
+        private void previewAction(String action, String message, Color bgColor, Color textColor, boolean playSound) {
+            TimeRangeMonitor tempMonitor = new TimeRangeMonitor(new ArrayList<>());
+            
+            // 预览声音
+            if (playSound) {
+                tempMonitor.previewSound();
+            }
+            
             if ("none".equals(action)) {
-                JOptionPane.showMessageDialog(this, "未设置触发动作", "预览", JOptionPane.INFORMATION_MESSAGE);
+                if (!playSound) {
+                    JOptionPane.showMessageDialog(this, "未设置触发动作", "预览", JOptionPane.INFORMATION_MESSAGE);
+                }
                 return;
             }
             
-            TimeRangeMonitor tempMonitor = new TimeRangeMonitor(new ArrayList<>());
             switch (action) {
                 case "dialog":
                     tempMonitor.previewDialogNotification(message, bgColor, textColor);

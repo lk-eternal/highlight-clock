@@ -18,6 +18,8 @@ public class ClockConfig {
     public float scale = 1.0f;
     public int windowX = 100;
     public int windowY = 100;
+    public boolean alwaysOnTop = true; // 窗口是否置顶
+    public float opacity = 1.0f; // 窗口透明度 (0.0-1.0)
 
     // 全局设置：是否在表盘显示标签
     public boolean showLabels = true;
@@ -57,6 +59,7 @@ public class ClockConfig {
         public String action = "none"; // "none", "dialog", "fullscreen", "lock"
         public String text; // 自定义文案
         public int intervalMinutes = 0; // 仅用于间隔触发
+        public boolean playSound = false; // 是否播放提示音
 
         public TriggerConfig() {}
         
