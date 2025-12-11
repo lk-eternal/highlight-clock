@@ -16,15 +16,20 @@ public class AnalogClock extends JFrame {
     private TimeRangeMonitor timeRangeMonitor;
     private TrayIcon trayIcon; // 托盘图标
     private GlobalHotkeyManager hotkeyManager; // 全局快捷键管理器
+    private final boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
 
     public AnalogClock() {
         ClockConfig config = ConfigManager.loadConfig();
         setTitle("LK Clock");
         setUndecorated(true);
         setAlwaysOnTop(config.alwaysOnTop);
-        setOpacity(Math.max(0.1f, Math.min(1.0f, config.opacity))); // 限制最小透明度
+        
+        // 所有平台统一使用透明背景
         setBackground(new Color(0, 0, 0, 0));
-        setType(Window.Type.UTILITY);
+        if (!isMac) {
+            setOpacity(Math.max(0.1f, Math.min(1.0f, config.opacity)));
+            setType(Window.Type.UTILITY);
+        }
 
         boolean traySetupSuccess = setupSystemTray();
         // 隐藏任务栏图标的配置（取决于操作系统和 JVM，通常与 setVisible(false) 结合使用）
@@ -44,7 +49,7 @@ public class AnalogClock extends JFrame {
         } else {
             setLocationRelativeTo(null);
         }
-
+        
         // 初始化时间范围监控器
         timeRangeMonitor = new TimeRangeMonitor(clockPanel.getHighlightAreas());
         
@@ -57,27 +62,21 @@ public class AnalogClock extends JFrame {
             System.err.println("全局快捷键初始化失败（程序仍可正常使用）: " + e.getMessage());
         }
 
-        // 动态更新时钟 - 使用独立的后台守护线程，避免被 AWT 托盘菜单阻塞
-        Thread clockUpdateThread = new Thread(() -> {
-            long lastTriggerCheck = 0;
-            while (true) {
-                try {
-                    clockPanel.repaint();
-                    // 每秒检查是否需要触发进入/退出动作
-                    long now = System.currentTimeMillis();
-                    if (now - lastTriggerCheck >= 1000) {
-                        timeRangeMonitor.checkAndTrigger();
-                        lastTriggerCheck = now;
-                    }
-                    // 约60fps刷新，实现平滑秒针
-                    Thread.sleep(16);
-                } catch (InterruptedException ex) {
-                    break;
-                }
+        // 动态更新时钟 - 使用 Swing Timer
+        // Mac: 每秒刷新一次（避免闪烁），Windows: 30fps 平滑刷新
+        int refreshInterval = isMac ? 1000 : 33;
+        final long[] lastTriggerCheck = {0};
+        javax.swing.Timer clockTimer = new javax.swing.Timer(refreshInterval, e -> {
+            clockPanel.repaint();
+            // 每秒检查是否需要触发进入/退出动作
+            long now = System.currentTimeMillis();
+            if (now - lastTriggerCheck[0] >= 1000) {
+                // 在新线程中检查触发，避免阻塞 EDT
+                new Thread(() -> timeRangeMonitor.checkAndTrigger()).start();
+                lastTriggerCheck[0] = now;
             }
         });
-        clockUpdateThread.setDaemon(true);
-        clockUpdateThread.start();
+        clockTimer.start();
 
         addMouseWheelListener(new MouseAdapter() {
             @Override
@@ -268,7 +267,7 @@ public class AnalogClock extends JFrame {
             clockPanel.showToast(message);
         }
     }
-
+    
     private void saveCurrentConfig() {
         ClockConfig config = new ClockConfig();
 
@@ -383,6 +382,8 @@ public class AnalogClock extends JFrame {
                 this.highlightAreas.add(new HighlightSetting(13, 18, 18, 0, defaultHighlightColor, "", Color.WHITE));
             }
 
+            // 启用双缓冲，减少闪烁
+            setDoubleBuffered(true);
             setOpaque(false);
             setPreferredSize(new Dimension(BASE_CLOCK_SIZE, BASE_CLOCK_SIZE));
 
@@ -395,6 +396,10 @@ public class AnalogClock extends JFrame {
                         parent.xOffset = e.getX();
                         parent.yOffset = e.getY();
                     }
+                    // Mac 上右键菜单在 mousePressed 触发
+                    if (e.isPopupTrigger()) {
+                        showContextMenu(e);
+                    }
                 }
                 
                 @Override
@@ -403,7 +408,7 @@ public class AnalogClock extends JFrame {
                     if (hoveredSetting != null) {
                         hoveredSetting = null;
                         setCursor(Cursor.getDefaultCursor());
-                        paintImmediately(0, 0, getWidth(), getHeight());
+                        repaint();
                     }
                 }
 
@@ -429,8 +434,13 @@ public class AnalogClock extends JFrame {
 
                 @Override
                 public void mouseReleased(MouseEvent e) {
-                    // 2. 右键 (Popup) 逻辑
+                    // Windows 上右键菜单在 mouseReleased 触发
                     if (e.isPopupTrigger()) {
+                        showContextMenu(e);
+                    }
+                }
+                
+                private void showContextMenu(MouseEvent e) {
                         JPopupMenu popup = new JPopupMenu();
                         HighlightSetting clickedSetting = getHighlightSettingAt(e.getX(), e.getY());
 
@@ -506,8 +516,7 @@ public class AnalogClock extends JFrame {
                         });
                         popup.add(exitItem);
 
-                        popup.show(e.getComponent(), e.getX(), e.getY());
-                    }
+                    popup.show(e.getComponent(), e.getX(), e.getY());
                 }
             });
 
@@ -539,8 +548,7 @@ public class AnalogClock extends JFrame {
                         setCursor(hoveredSetting != null 
                             ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) 
                             : Cursor.getDefaultCursor());
-                        // 使用 paintImmediately 立即重绘，避免延迟
-                        paintImmediately(0, 0, getWidth(), getHeight());
+                        repaint();
                     }
                 }
             });
