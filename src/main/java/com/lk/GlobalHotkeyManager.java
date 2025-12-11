@@ -27,9 +27,6 @@ public class GlobalHotkeyManager implements NativeKeyListener {
      */
     public void start() {
         try {
-            // 设置本地库提取到临时目录，避免在工作目录生成 DLL 文件
-            System.setProperty("jnativehook.lib.path", System.getProperty("java.io.tmpdir"));
-            
             // 禁用 JNativeHook 的日志输出
             Logger logger = Logger.getLogger(GlobalScreen.class.getPackage().getName());
             logger.setLevel(Level.OFF);
@@ -37,8 +34,13 @@ public class GlobalHotkeyManager implements NativeKeyListener {
             
             GlobalScreen.registerNativeHook();
             GlobalScreen.addNativeKeyListener(this);
+            System.out.println("全局快捷键已启用: Alt+C 显示/隐藏, Alt+T 切换置顶");
         } catch (NativeHookException e) {
             System.err.println("无法注册全局快捷键: " + e.getMessage());
+        } catch (UnsatisfiedLinkError e) {
+            System.err.println("全局快捷键本地库加载失败（可能缺少 VC++ 运行库）: " + e.getMessage());
+        } catch (Throwable e) {
+            System.err.println("全局快捷键初始化异常: " + e.getMessage());
         }
     }
     

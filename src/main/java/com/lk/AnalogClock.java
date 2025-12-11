@@ -49,8 +49,13 @@ public class AnalogClock extends JFrame {
         timeRangeMonitor = new TimeRangeMonitor(clockPanel.getHighlightAreas());
         
         // 初始化全局快捷键 (Alt+C 显示/隐藏, Alt+T 切换置顶)
-        hotkeyManager = new GlobalHotkeyManager(this);
-        hotkeyManager.start();
+        try {
+            hotkeyManager = new GlobalHotkeyManager(this);
+            hotkeyManager.start();
+        } catch (Throwable e) {
+            // 全局快捷键功能失败不影响程序正常运行
+            System.err.println("全局快捷键初始化失败（程序仍可正常使用）: " + e.getMessage());
+        }
 
         // 动态更新时钟 - 使用独立的后台守护线程，避免被 AWT 托盘菜单阻塞
         Thread clockUpdateThread = new Thread(() -> {
@@ -307,6 +312,9 @@ public class AnalogClock extends JFrame {
     }
 
     public static void main(String[] args) {
+        // 设置 JNativeHook 本地库提取路径到临时目录（必须在 JNativeHook 类加载前设置）
+        System.setProperty("jnativehook.lib.path", System.getProperty("java.io.tmpdir"));
+        
         SwingUtilities.invokeLater(AnalogClock::new);
     }
 
