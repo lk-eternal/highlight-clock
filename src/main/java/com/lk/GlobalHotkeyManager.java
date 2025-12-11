@@ -27,6 +27,9 @@ public class GlobalHotkeyManager implements NativeKeyListener {
      */
     public void start() {
         try {
+            // 设置本地库提取到临时目录，避免在工作目录生成 DLL 文件
+            System.setProperty("jnativehook.lib.path", System.getProperty("java.io.tmpdir"));
+            
             // 禁用 JNativeHook 的日志输出
             Logger logger = Logger.getLogger(GlobalScreen.class.getPackage().getName());
             logger.setLevel(Level.OFF);

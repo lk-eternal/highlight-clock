@@ -1,8 +1,8 @@
 package com.lk;
 
 import java.awt.Color;
+import java.util.ArrayList;
 import java.util.List;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -16,8 +16,8 @@ import com.lk.ConfigManager.ColorSerializer;
 public class ClockConfig {
     // 窗口属性
     public float scale = 1.0f;
-    public int windowX = 100;
-    public int windowY = 100;
+    public int windowX = 1600;
+    public int windowY = 70;
     public boolean alwaysOnTop = true; // 窗口是否置顶
     public float opacity = 1.0f; // 窗口透明度 (0.0-1.0)
 
@@ -27,32 +27,65 @@ public class ClockConfig {
     // 颜色属性 - 直接使用 Color 类型，并指定序列化/反序列化器
     @JsonSerialize(using = ColorSerializer.class)
     @JsonDeserialize(using = ColorDeserializer.class)
-    public Color clockColor = new Color(50, 50, 50, 255);
+    public Color clockColor = new Color(0x33, 0x33, 0x33); // #333333
 
     @JsonSerialize(using = ColorSerializer.class)
     @JsonDeserialize(using = ColorDeserializer.class)
-    public Color defaultHighlightColor = new Color(0xDD, 0x77, 0x0, 80);
+    public Color defaultHighlightColor = new Color(0xDD, 0x77, 0x00); // #DD7700
 
     @JsonSerialize(using = ColorSerializer.class)
     @JsonDeserialize(using = ColorDeserializer.class)
-    public Color numberColor = Color.WHITE;
+    public Color numberColor = Color.WHITE; // #FFFFFF
 
     @JsonSerialize(using = ColorSerializer.class)
     @JsonDeserialize(using = ColorDeserializer.class)
-    public Color hourHandColor = Color.WHITE;
+    public Color hourHandColor = Color.WHITE; // #FFFFFF
 
     @JsonSerialize(using = ColorSerializer.class)
     @JsonDeserialize(using = ColorDeserializer.class)
-    public Color minuteHandColor = Color.LIGHT_GRAY;
+    public Color minuteHandColor = new Color(0xE2, 0xE2, 0xE2); // #E2E2E2
 
     @JsonSerialize(using = ColorSerializer.class)
     @JsonDeserialize(using = ColorDeserializer.class)
-    public Color secondHandColor = Color.RED;
+    public Color secondHandColor = Color.RED; // #FF0000
 
     // 高亮区域列表
     public List<SerializableHighlightSetting> highlightAreas;
 
-    public ClockConfig() {}
+    public ClockConfig() {
+        // 初始化默认高亮区域
+        highlightAreas = createDefaultHighlightAreas();
+    }
+    
+    /**
+     * 创建默认的高亮区域配置
+     */
+    private static List<SerializableHighlightSetting> createDefaultHighlightAreas() {
+        List<SerializableHighlightSetting> areas = new ArrayList<>();
+        
+        // 上午上班 9:00 - 11:38
+        TriggerConfig enter1 = new TriggerConfig("fullscreen", "", 0, true);
+        TriggerConfig exit1 = new TriggerConfig("none", "", 0, false);
+        TriggerConfig interval1 = new TriggerConfig("dialog", "请注意休息!!!", 30, true);
+        areas.add(new SerializableHighlightSetting(9, 0, 11, 38, 
+            new Color(0xDD, 0x75, 0x00), "上班", Color.WHITE, enter1, exit1, interval1));
+        
+        // 午休 11:38 - 13:00
+        TriggerConfig enter2 = new TriggerConfig("fullscreen", "", 0, true);
+        TriggerConfig exit2 = new TriggerConfig("none", "", 0, false);
+        TriggerConfig interval2 = new TriggerConfig("none", "", 30, false);
+        areas.add(new SerializableHighlightSetting(11, 38, 13, 0, 
+            new Color(0x33, 0xAA, 0x00), "午休", Color.WHITE, enter2, exit2, interval2));
+        
+        // 下午上班 13:00 - 18:00
+        TriggerConfig enter3 = new TriggerConfig("fullscreen", "", 0, true);
+        TriggerConfig exit3 = new TriggerConfig("lock", "", 0, false);
+        TriggerConfig interval3 = new TriggerConfig("dialog", "请注意休息!!!", 30, true);
+        areas.add(new SerializableHighlightSetting(13, 0, 18, 0, 
+            new Color(0xDD, 0x77, 0x00), "上班", Color.WHITE, enter3, exit3, interval3));
+        
+        return areas;
+    }
 
     // 触发器配置类
     public static class TriggerConfig {
@@ -72,6 +105,13 @@ public class ClockConfig {
             this.action = action;
             this.text = text;
             this.intervalMinutes = intervalMinutes;
+        }
+        
+        public TriggerConfig(String action, String text, int intervalMinutes, boolean playSound) {
+            this.action = action;
+            this.text = text;
+            this.intervalMinutes = intervalMinutes;
+            this.playSound = playSound;
         }
     }
 
